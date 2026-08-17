@@ -8,8 +8,17 @@
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
   />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>MaazGame — Grid RPG (Steps 1 & 2)</title>
+  <meta name="apple-mobile-web-app-title" content="MaazGame" />
+  <meta name="theme-color" content="#10131a" />
+
+  <!-- PWA: manifest + iOS home-screen icon (iOS ignores the manifest icons). -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+
+  <title>MaazGame — Grid RPG</title>
   <style>
     :root {
       --bg: #10131a;
@@ -41,8 +50,8 @@
       image-rendering: crisp-edges;
     }
   </style>
-  <!-- Phaser 3 via CDN. Swap to a local/pinned copy before shipping a PWA. -->
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <!-- Phaser 3, vendored locally so the PWA installs and runs fully offline. -->
+  <script src="vendor/phaser.min.js"></script>
 </head>
 <body>
   <div id="game-root"></div>
@@ -53,7 +62,9 @@
   //  STEP 1: Grid-based movement + collision matrix
   //  STEP 2: Layered tilemap rendering + 4-directional walk animations
   //  STEP 3: On-screen touch D-Pad overlay (iPad-friendly)
-  //  STEP 4: Tall-grass step tracking + random encounter hook (callback stub)
+  //  STEP 4: Tall-grass step tracking + random encounter hook
+  //  STEP 5: Turn-based battle scene (moves, HP, turn order, win/lose/run)
+  //  STEP 6: PWA — installable + offline via manifest + service worker
   //
   //  This file is intentionally self-contained: it generates all placeholder
   //  art at runtime (no external image assets), so it runs by just opening it.
@@ -239,6 +250,31 @@
       Assets.makeTree(scene, 'tile_tree');
       Assets.makeTile(scene, 'tile_wall',  0x8a8f99, 0x5f636b); // stone wall
       Assets.makeTile(scene, 'tile_water', 0x3d7bd6, 0x2f61ab); // water (blocked)
+    },
+
+    // A placeholder battle monster: a coloured blob with eyes and feet.
+    // One texture per species colour; keyed so we only build each once.
+    buildMonster(scene, key, color) {
+      if (scene.textures.exists(key)) return;
+      const S = 48;
+      const g = scene.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(color, 1);
+      g.fillCircle(S / 2 - 11, S / 2, 8);          // left limb
+      g.fillCircle(S / 2 + 11, S / 2, 8);          // right limb
+      g.fillCircle(S / 2, S / 2 + 3, 16);          // body
+      g.fillStyle(0xffffff, 0.28);
+      g.fillCircle(S / 2, S / 2 + 7, 9);           // belly highlight
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(S / 2 - 6, S / 2 + 1, 4);       // eye whites
+      g.fillCircle(S / 2 + 6, S / 2 + 1, 4);
+      g.fillStyle(0x111111, 1);
+      g.fillCircle(S / 2 - 6, S / 2 + 2, 2);       // pupils
+      g.fillCircle(S / 2 + 6, S / 2 + 2, 2);
+      g.fillStyle(0x1c1c1c, 1);
+      g.fillRect(S / 2 - 11, S - 8, 7, 6);         // feet
+      g.fillRect(S / 2 + 4, S - 8, 7, 6);
+      g.generateTexture(key, S, S);
+      g.destroy();
     },
 
     // Build a 4-row x 3-col walk sprite sheet (down/left/right/up), 3 frames
@@ -516,9 +552,8 @@
   // =========================================================================
   //  ENCOUNTER MANAGER (Step 4)
   //  Counts steps taken on tall-grass tiles and rolls for a random encounter.
-  //  On trigger it fires `onEncounter()` — the seam where a future turn-based
-  //  battle scene takes over. For now it flashes the screen and briefly locks
-  //  input as a visible placeholder.
+  //  On trigger it flashes the screen and hands off to WorldScene.startBattle(),
+  //  which pauses the overworld and launches the turn-based BattleScene (Step 5).
   // =========================================================================
   class EncounterManager {
     constructor(scene, opts = {}) {
@@ -551,27 +586,343 @@
       const scene = this.scene;
       scene.encounterActive = true; // input gate, read in WorldScene.update()
 
-      scene.cameras.main.flash(260, 255, 255, 255);
+      // Quick white flash, then hand off to the battle scene.
+      scene.cameras.main.flash(300, 255, 255, 255);
+      scene.time.delayedCall(320, () => {
+        if (this.onEncounter) this.onEncounter();
+        scene.startBattle();
+      });
+    }
+  }
 
-      const label = scene.add
-        .text(VIEW_W / 2, VIEW_H / 2, 'A wild MAAZ appeared!', {
-          fontFamily: 'monospace',
-          fontSize: '16px',
-          color: '#ffffff',
-          backgroundColor: '#000000',
-          padding: { x: 8, y: 6 },
-        })
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(2000);
+  // =========================================================================
+  //  BATTLE DATA (Step 5)
+  //  Data-driven moves and species. Everything the battle system needs is a
+  //  plain object here, so adding content is editing data, not code.
+  // =========================================================================
+  const MOVES = Object.freeze({
+    tackle:   { name: 'Tackle',   power: 40, accuracy: 100, type: 'normal' },
+    scratch:  { name: 'Scratch',  power: 40, accuracy: 100, type: 'normal' },
+    ember:    { name: 'Ember',    power: 45, accuracy: 100, type: 'fire'   },
+    watergun: { name: 'Water Gun',power: 45, accuracy: 100, type: 'water'  },
+    vinewhip: { name: 'Vine Whip',power: 45, accuracy: 100, type: 'grass'  },
+    spark:    { name: 'Spark',    power: 45, accuracy: 100, type: 'electric'},
+    gust:     { name: 'Gust',     power: 35, accuracy: 100, type: 'flying' },
+    quickatk: { name: 'Quick Atk',power: 30, accuracy: 100, type: 'normal' },
+  });
 
-      // Hand off to the (future) battle system.
-      if (this.onEncounter) this.onEncounter();
+  // baseStats feed a simple level-scaling formula in makeMonster().
+  const SPECIES = Object.freeze({
+    maaz:  { name: 'MAAZ',  color: 0xd23b3b, base: { hp: 26, atk: 12, def: 10, spd: 12 }, moves: ['tackle', 'ember', 'quickatk'] },
+    aqua:  { name: 'AQUABIT', color: 0x3d7bd6, base: { hp: 28, atk: 10, def: 12, spd: 10 }, moves: ['tackle', 'watergun'] },
+    leaflet:{ name: 'LEAFLET', color: 0x3fa34d, base: { hp: 30, atk: 10, def: 11, spd: 9 }, moves: ['scratch', 'vinewhip'] },
+    zapmo: { name: 'ZAPMO', color: 0xe6c62e, base: { hp: 22, atk: 11, def: 9,  spd: 15 }, moves: ['scratch', 'spark', 'quickatk'] },
+    birbo: { name: 'BIRBO', color: 0x9b6bd0, base: { hp: 24, atk: 11, def: 9,  spd: 14 }, moves: ['gust', 'quickatk'] },
+  });
 
-      // Placeholder: clear the banner and release input after a beat.
-      scene.time.delayedCall(1400, () => {
-        label.destroy();
-        scene.encounterActive = false;
+  // The pool of species that appear in tall grass, and their level range.
+  const WILD_POOL = ['aqua', 'leaflet', 'zapmo', 'birbo'];
+  const WILD_LEVELS = { min: 2, max: 5 };
+
+  // Build a live monster instance from a species key + level. Stats scale
+  // linearly with level; `hp` tracks current HP separately from `maxHp`.
+  function makeMonster(speciesKey, level) {
+    const s = SPECIES[speciesKey];
+    const maxHp = s.base.hp + level * 3;
+    return {
+      speciesKey,
+      name: s.name,
+      color: s.color,
+      level,
+      maxHp,
+      hp: maxHp,
+      atk: s.base.atk + level,
+      def: s.base.def + Math.floor(level / 2),
+      spd: s.base.spd + level,
+      moves: s.moves.map((k) => k),
+    };
+  }
+
+  // Standard-ish damage formula (simplified Gen-1). Returns an integer >= 1.
+  function computeDamage(attacker, defender, move) {
+    const lvl = attacker.level;
+    const base = Math.floor(((2 * lvl) / 5 + 2) * move.power * (attacker.atk / defender.def) / 50) + 2;
+    const roll = 0.85 + Math.random() * 0.15; // 85%–100% variance
+    return Math.max(1, Math.floor(base * roll));
+  }
+
+  // =========================================================================
+  //  BATTLE SCENE (Step 5)
+  //  A turn-based, Pokémon-style battle. Launched on top of a paused
+  //  WorldScene; draws its own opaque scene so the overworld is hidden.
+  //
+  //  Flow is written with async/await over small helpers (message / wait /
+  //  animateBar), which keeps the turn logic readable and strictly ordered:
+  //  choose move -> resolve actions by speed -> check faints -> repeat.
+  // =========================================================================
+  class BattleScene extends Phaser.Scene {
+    constructor() {
+      super('BattleScene');
+    }
+
+    init(data) {
+      this.playerMon = data.playerMon;
+      this.enemyMon = data.enemyMon;
+      this.busy = true;        // gate button input until the intro finishes
+      this.uiButtons = [];
+    }
+
+    create() {
+      this.cameras.main.fadeIn(200, 0, 0, 0);
+      this._buildScene();
+      this.start();
+    }
+
+    // ---- layout ----------------------------------------------------------
+    _buildScene() {
+      const W = VIEW_W, H = VIEW_H;
+
+      // Opaque background (sky + ground band) so the paused world can't show.
+      this.add.rectangle(0, 0, W, H, 0x9bd7e6).setOrigin(0).setDepth(0);
+      this.add.rectangle(0, H * 0.62, W, H * 0.38, 0x6bbf59).setOrigin(0).setDepth(0);
+
+      // Monster textures (built lazily, one per species colour).
+      Assets.buildMonster(this, 'mon_' + this.enemyMon.speciesKey, this.enemyMon.color);
+      Assets.buildMonster(this, 'mon_' + this.playerMon.speciesKey, this.playerMon.color);
+
+      // Enemy: upper-right, on a platform.
+      this.add.ellipse(360, 128, 96, 26, 0x4f9d43).setDepth(1);
+      this.enemySprite = this.add
+        .image(360, 104, 'mon_' + this.enemyMon.speciesKey)
+        .setDepth(2)
+        .setScale(1.5);
+
+      // Player's monster: lower-left, larger (nearer the camera).
+      this.add.ellipse(120, 236, 110, 28, 0x4f9d43).setDepth(1);
+      this.playerSprite = this.add
+        .image(120, 208, 'mon_' + this.playerMon.speciesKey)
+        .setDepth(2)
+        .setScale(1.9);
+
+      // Status panels.
+      this._buildPanel(16, 24, this.enemyMon, false);
+      this._buildPanel(284, 150, this.playerMon, true);
+
+      // Bottom message / command box.
+      this.add.rectangle(8, 262, VIEW_W - 16, 82, 0x10131a, 0.94)
+        .setOrigin(0).setStrokeStyle(2, 0xffffff, 0.6).setDepth(100);
+      this.msgText = this.add.text(20, 274, '', {
+        fontFamily: 'monospace', fontSize: '13px', color: '#ffffff',
+        lineSpacing: 4, wordWrap: { width: 250 },
+      }).setDepth(101);
+    }
+
+    // A name/level line plus an HP bar. Returns nothing; stashes the bar.
+    _buildPanel(x, y, mon, isPlayer) {
+      this.add.rectangle(x, y, 180, isPlayer ? 50 : 40, 0x10131a, 0.9)
+        .setOrigin(0).setStrokeStyle(2, 0xffffff, 0.6).setDepth(50);
+      this.add.text(x + 8, y + 6, `${mon.name}`, {
+        fontFamily: 'monospace', fontSize: '12px', color: '#ffffff',
+      }).setDepth(51);
+      this.add.text(x + 172, y + 6, `Lv${mon.level}`, {
+        fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
+      }).setOrigin(1, 0).setDepth(51);
+
+      const barX = x + 8, barY = y + 24, barW = 164;
+      this.add.rectangle(barX, barY, barW, 8, 0x333333).setOrigin(0, 0.5).setDepth(51);
+      const fill = this.add.rectangle(barX, barY, barW, 8, 0x54b35a)
+        .setOrigin(0, 0.5).setDepth(52);
+      this._setBarColor(fill, 1);
+
+      if (isPlayer) {
+        this.playerBar = fill;
+        this.playerHpText = this.add.text(x + 172, y + 32,
+          `${mon.hp}/${mon.maxHp}`, {
+            fontFamily: 'monospace', fontSize: '10px', color: '#ffffff',
+          }).setOrigin(1, 0).setDepth(51);
+      } else {
+        this.enemyBar = fill;
+      }
+    }
+
+    _setBarColor(fill, ratio) {
+      fill.fillColor = ratio > 0.5 ? 0x54b35a : ratio > 0.2 ? 0xe6c62e : 0xd23b3b;
+    }
+
+    // ---- async primitives ------------------------------------------------
+    wait(ms) {
+      return new Promise((res) => this.time.delayedCall(ms, res));
+    }
+
+    // Show a line and wait for a tap (or auto-advance after a beat).
+    message(text) {
+      this.msgText.setText(text);
+      return new Promise((res) => {
+        let timer = null;
+        const done = () => {
+          this.input.off('pointerdown', done);
+          if (timer) timer.remove(false);
+          res();
+        };
+        timer = this.time.delayedCall(1150, done);
+        this.input.once('pointerdown', done);
+      });
+    }
+
+    setMessage(text) { this.msgText.setText(text); }
+
+    animateBar(fill, ratio) {
+      return new Promise((res) => {
+        this.tweens.add({
+          targets: fill, scaleX: Math.max(0, ratio), duration: 450, ease: 'Sine.out',
+          onUpdate: () => this._setBarColor(fill, fill.scaleX),
+          onComplete: () => { this._setBarColor(fill, ratio); res(); },
+        });
+      });
+    }
+
+    // ---- menus -----------------------------------------------------------
+    clearButtons() {
+      this.uiButtons.forEach((b) => b.destroy());
+      this.uiButtons = [];
+    }
+
+    addButton(x, y, w, h, label, cb) {
+      const r = this.add.rectangle(x, y, w, h, 0x1b2a3a, 1)
+        .setStrokeStyle(2, 0xffffff, 0.85).setDepth(120)
+        .setInteractive({ useHandCursor: true });
+      const t = this.add.text(x, y, label, {
+        fontFamily: 'monospace', fontSize: '12px', color: '#ffffff',
+      }).setOrigin(0.5).setDepth(121);
+      r.on('pointerdown', () => { if (!this.busy) cb(); });
+      this.uiButtons.push(r, t);
+      return r;
+    }
+
+    openMenu() {
+      this.busy = false;
+      this.clearButtons();
+      this.setMessage(`What will\n${this.playerMon.name} do?`);
+      this.addButton(360, 288, 150, 30, 'FIGHT', () => this.openMoves());
+      this.addButton(360, 324, 150, 30, 'RUN', () => this.tryRun());
+    }
+
+    openMoves() {
+      this.clearButtons();
+      this.setMessage('Choose a move:');
+      const pos = [[305, 286], [405, 286], [305, 320], [405, 320]];
+      const moves = this.playerMon.moves;
+      moves.forEach((mk, i) => {
+        const [x, y] = pos[i];
+        this.addButton(x, y, 94, 26, MOVES[mk].name, () => this.takeTurn(mk));
+      });
+      const [cx, cy] = pos[Math.min(moves.length, 3)];
+      this.addButton(cx, cy, 94, 26, 'CANCEL', () => this.openMenu());
+    }
+
+    // ---- turn resolution -------------------------------------------------
+    async start() {
+      await this.message(`A wild ${this.enemyMon.name} appeared!`);
+      await this.message(`Go! ${this.playerMon.name}!`);
+      this.openMenu();
+    }
+
+    async takeTurn(playerMoveKey) {
+      this.busy = true;
+      this.clearButtons();
+
+      const enemyMoveKey = this.enemyMon.moves[
+        Math.floor(Math.random() * this.enemyMon.moves.length)
+      ];
+
+      // Order both actions by speed; ties broken randomly.
+      const actions = [
+        { user: this.playerMon, target: this.enemyMon, move: playerMoveKey, isPlayer: true },
+        { user: this.enemyMon, target: this.playerMon, move: enemyMoveKey, isPlayer: false },
+      ].sort((a, b) => (b.user.spd - a.user.spd) || (Math.random() < 0.5 ? -1 : 1));
+
+      for (const act of actions) {
+        if (act.user.hp <= 0) continue; // fainted before it could act
+        await this.doMove(act);
+        if (this.enemyMon.hp <= 0) { await this.win(); return; }
+        if (this.playerMon.hp <= 0) { await this.lose(); return; }
+      }
+
+      this.openMenu();
+    }
+
+    async doMove(act) {
+      const move = MOVES[act.move];
+      const userName = act.isPlayer ? this.playerMon.name : `Wild ${this.enemyMon.name}`;
+      await this.message(`${userName} used ${move.name}!`);
+
+      if (Math.random() * 100 > move.accuracy) {
+        await this.message('But it missed!');
+        return;
+      }
+
+      const dmg = computeDamage(act.user, act.target, move);
+      act.target.hp = Math.max(0, act.target.hp - dmg);
+
+      const targetIsEnemy = act.target === this.enemyMon;
+      const bar = targetIsEnemy ? this.enemyBar : this.playerBar;
+      await this.animateBar(bar, act.target.hp / act.target.maxHp);
+      if (!targetIsEnemy) {
+        this.playerHpText.setText(`${act.target.hp}/${act.target.maxHp}`);
+      }
+
+      if (act.target.hp <= 0) {
+        const faintName = targetIsEnemy ? `Wild ${this.enemyMon.name}` : this.playerMon.name;
+        // Little faint drop.
+        const spr = targetIsEnemy ? this.enemySprite : this.playerSprite;
+        this.tweens.add({ targets: spr, y: spr.y + 16, alpha: 0, duration: 300 });
+        await this.message(`${faintName} fainted!`);
+      }
+    }
+
+    async tryRun() {
+      this.busy = true;
+      this.clearButtons();
+      const chance = 0.5 + (this.playerMon.spd - this.enemyMon.spd) * 0.06;
+      if (Math.random() < Math.max(0.3, Math.min(0.95, chance))) {
+        await this.message('Got away safely!');
+        this.endBattle('run');
+        return;
+      }
+      await this.message("Couldn't get away!");
+      const eMove = this.enemyMon.moves[
+        Math.floor(Math.random() * this.enemyMon.moves.length)
+      ];
+      await this.doMove({ user: this.enemyMon, target: this.playerMon, move: eMove, isPlayer: false });
+      if (this.playerMon.hp <= 0) { await this.lose(); return; }
+      this.openMenu();
+    }
+
+    async win() {
+      await this.message(`${this.playerMon.name} won the battle!`);
+      this.endBattle('win');
+    }
+
+    async lose() {
+      await this.message(`${this.playerMon.name} has no energy left...`);
+      await this.message('You scurry back home to recover.');
+      this.playerMon.hp = this.playerMon.maxHp; // heal for the next foray
+      this.endBattle('lose');
+    }
+
+    // ---- teardown --------------------------------------------------------
+    endBattle(result) {
+      this.busy = true;
+      this.clearButtons();
+      this.cameras.main.fadeOut(260, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        const world = this.scene.get('WorldScene');
+        world.encounterActive = false;
+        world.pressedDir = null;
+        world.input.enabled = true;
+        this.scene.stop();
+        this.scene.resume('WorldScene');
+        world.cameras.main.flash(220, 0, 0, 0);
       });
     }
   }
@@ -620,15 +971,29 @@
       // Step 3: on-screen D-Pad for touch devices. Also fine with a mouse.
       this.touch = new TouchControls(this);
 
-      // Step 4: encounter system. `onEncounter` is the battle-scene seam.
+      // The player's party. A single starter for now; a roster/PC comes later.
+      this.party = [makeMonster('maaz', 5)];
+
+      // Step 4: encounter system. On trigger it calls startBattle() (Step 5).
       this.encounterActive = false;
       this.encounters = new EncounterManager(this, {
-        onEncounter: () => {
-          // TODO: this.scene.pause() + this.scene.launch('BattleScene', {...})
-          // when the turn-based battle state machine exists.
-          console.log('[encounter] wild battle would start here');
-        },
+        onEncounter: () => console.log('[encounter] wild battle starting'),
       });
+    }
+
+    // Launch a turn-based battle against a random wild monster (Step 5).
+    // Pauses the overworld and disables its input while the battle runs.
+    startBattle() {
+      const key = WILD_POOL[Math.floor(Math.random() * WILD_POOL.length)];
+      const level = Phaser.Math.Between(WILD_LEVELS.min, WILD_LEVELS.max);
+      const wild = makeMonster(key, level);
+
+      this.input.enabled = false; // stop the paused world eating touches
+      this.scene.launch('BattleScene', {
+        playerMon: this.party[0],
+        enemyMon: wild,
+      });
+      this.scene.pause();
     }
 
     // Draw ground first, then decor on top. Each tile is a static image; for
@@ -723,17 +1088,31 @@
       antialias: false,
       pixelArt: true,
     },
-    scene: [WorldScene],
+    scene: [WorldScene, BattleScene], // WorldScene starts first (default)
   };
 
-  // Guard against the CDN failing to load (offline first run, etc.).
+  // Guard against the vendored Phaser build failing to load.
   if (typeof Phaser === 'undefined') {
     document.getElementById('game-root').innerHTML =
       '<p style="color:#fff;font-family:sans-serif;padding:2rem;text-align:center">' +
-      'Failed to load Phaser from the CDN. Check your network connection.</p>';
+      'Failed to load Phaser (vendor/phaser.min.js). Make sure the file is ' +
+      'served alongside index.html.</p>';
   } else {
-    // eslint-disable-next-line no-new
-    new Phaser.Game(gameConfig);
+    // Exposed for debugging / automated testing.
+    window.game = new Phaser.Game(gameConfig);
+  }
+
+  // -------------------------------------------------------------------------
+  //  PWA (Step 6): register the service worker so the game installs to the
+  //  iPad home screen and runs offline after the first load. Registration is
+  //  best-effort — the game works fine without it (just no offline caching).
+  // -------------------------------------------------------------------------
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('sw.js')
+        .catch((err) => console.warn('Service worker registration failed:', err));
+    });
   }
   </script>
 </body>
