@@ -37,14 +37,18 @@ const log = (...a) => console.log(...a);
 
   try {
     await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
-    await page.waitForFunction(() => window.game?.scene?.getScene('WorldScene')?.player, { timeout: 10000 });
+    await page.waitForFunction(() => window.game?.scene?.getScene('WorldScene')?.ready, { timeout: 15000 });
     log('\n[1] BOOT');
     const boot = await page.evaluate(() => {
       const w = window.game.scene.getScene('WorldScene');
       return { party: w.state.party.length, lead: w.state.party[0].name, lvl: w.state.party[0].level,
                bag: w.state.bag, rows: w.matrix.blocked.length, cols: w.matrix.blocked[0].length,
-               spawnBlocked: w.matrix.isBlocked(w.player.col, w.player.row) };
+               spawnBlocked: w.matrix.isBlocked(w.player.col, w.player.row),
+               mapName: w.map.name, mapTitle: w.map.displayName,
+               areas: Object.keys(w.mapIndex.maps) };
     });
+    check('started in town', boot.mapName === 'town', `${boot.mapTitle}`);
+    check('all areas indexed', boot.areas.length === 3, boot.areas.join(', '));
     check('world + party ready', boot.party === 1 && boot.lead === 'MAAZ', `${boot.lead} Lv${boot.lvl}`);
     check('collision matrix built', boot.rows === 15 && boot.cols === 20, `${boot.cols}x${boot.rows}`);
     check('spawn walkable', !boot.spawnBlocked);
@@ -75,6 +79,60 @@ const log = (...a) => console.log(...a);
     check('normal step works', mv.moved);
     check('diagonal rejected', mv.diag === false);
 
+    log('\n[2b] WARPS + MULTI-AREA');
+    const warp = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const out = {};
+
+      // Every warp pad in every loaded area must land somewhere walkable.
+      const mod = await import('/src/systems/maploader.js');
+      const idx = await mod.loadIndex();
+      out.badWarps = [];
+      out.warpCount = 0;
+      for (const name of Object.keys(idx.maps)) {
+        const m = await mod.loadMap(name);
+        for (const [at, wp] of Object.entries(m.warps)) {
+          out.warpCount++;
+          const dest = await mod.loadMap(wp.toMap);
+          const id = dest.ground[wp.toRow]?.[wp.toCol];
+          const tile = id >= 0 ? dest.tiles[id] : null;
+          if (!tile || !tile.walkable) out.badWarps.push(`${name}@${at} -> ${wp.toMap}`);
+        }
+      }
+
+      // Walk the real route: town -> route1 -> cave -> route1 -> town.
+      w.placePlayer(18, 7, 'right');
+      w.player.tryMove('right');                 // steps onto the warp pad
+      await wait(1400);
+      out.afterEast = w.map.name;
+      out.collisionMatches = w.matrix.cols === w.map.cols && w.matrix.rows === w.map.rows;
+
+      await w.warpTo('route1', 18, 7, 'right');
+      w.player.tryMove('right');
+      await wait(1400);
+      out.afterCave = w.map.name;
+      out.caveDims = `${w.map.cols}x${w.map.rows}`;
+      out.caveEncounters = w.map.encounters ? w.map.encounters.pool.join(',') : null;
+
+      w.player.tryMove('left');                  // cave (0,5) warps back
+      await wait(1400);
+      out.backToRoute = w.map.name;
+
+      await w.warpTo('town', 4, 7, 'down');
+      out.home = w.map.name;
+      out.townSafe = w.map.encounters === null;
+      return out;
+    });
+    check('all warp destinations walkable', warp.badWarps.length === 0,
+      `${warp.warpCount} warps checked${warp.badWarps.length ? ': ' + warp.badWarps.join('; ') : ''}`);
+    check('town -> route1 via stepping on pad', warp.afterEast === 'route1');
+    check('collision matrix rebuilt for new area', warp.collisionMatches);
+    check('route1 -> cave', warp.afterCave === 'cave', `cave is ${warp.caveDims}`);
+    check('cave has its own encounter pool', warp.caveEncounters === 'pebbo,zapmo', String(warp.caveEncounters));
+    check('cave -> route1 (return trip)', warp.backToRoute === 'route1');
+    check('town is a safe area', warp.townSafe && warp.home === 'town');
+
     log('\n[3] TYPE EFFECTIVENESS IN BATTLE');
     const typeTest = await page.evaluate(async () => {
       const w = window.game.scene.getScene('WorldScene');
@@ -96,9 +154,10 @@ const log = (...a) => console.log(...a);
     check('effectiveness message', typeTest.txt === "It's super effective!");
 
     log('\n[4] BATTLE FLOW + XP/LEVEL UP');
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       const w = window.game.scene.getScene('WorldScene');
-      // Deterministic weak enemy so the player wins
+      // Town is a safe area, so move to ROUTE 1 before forcing a battle.
+      await w.warpTo('route1', 1, 7, 'right');
       w.startBattle();
     });
     await page.waitForFunction(() => {
@@ -147,7 +206,7 @@ const log = (...a) => console.log(...a);
     const catchRes = await page.evaluate(async () => {
       const w = window.game.scene.getScene('WorldScene');
       w.state.bag.greatball = 50;              // plenty of attempts
-      w.startBattle();
+      w.startBattle();                          // already on ROUTE 1
       await new Promise(r => setTimeout(r, 700));
       const b = window.game.scene.getScene('BattleScene');
       const partyBefore = w.state.party.length;
@@ -217,6 +276,9 @@ const log = (...a) => console.log(...a);
     log('\n[7] MENU + SAVE/LOAD');
     const menuRes = await page.evaluate(async () => {
       const w = window.game.scene.getScene('WorldScene');
+      // Save from the cave, so "which area am I in" is actually restored
+      // rather than coincidentally matching the default start map.
+      await w.warpTo('cave', 5, 5, 'down');
       w.openMenu(); const opened = w.menuOpen;
       w.showParty(); w.showBag(); w.showDex();   // exercise each screen
       w.openMenu();
@@ -229,39 +291,41 @@ const log = (...a) => console.log(...a);
 
     // Reload the page and confirm the save is restored
     await page.reload({ waitUntil: 'load' });
-    await page.waitForFunction(() => window.game?.scene?.getScene('WorldScene')?.player, { timeout: 10000 });
+    await page.waitForFunction(() => window.game?.scene?.getScene('WorldScene')?.ready, { timeout: 15000 });
     const loaded = await page.evaluate(() => {
       const w = window.game.scene.getScene('WorldScene');
       return { party: w.state.party.length, names: w.state.party.map(m=>m.name),
                pos: { c: w.player.col, r: w.player.row }, caught: w.state.caught.length,
-               hpValid: w.state.party.every(m => m.hp >= 0 && m.hp <= m.maxHp) };
+               hpValid: w.state.party.every(m => m.hp >= 0 && m.hp <= m.maxHp),
+               map: w.map.name, facing: w.player.facing };
     });
     check('save restored after reload', loaded.party === 2, `party: ${loaded.names.join(', ')}`);
     check('caught list persisted', loaded.caught >= 1);
     check('restored HP within bounds', loaded.hpValid);
+    check('restored the saved area, not the start map', loaded.map === 'cave',
+      `${loaded.map} at (${loaded.pos.c},${loaded.pos.r}) facing ${loaded.facing}`);
 
     log('\n[8] BLACKOUT (all fainted)');
     const blackout = await page.evaluate(async () => {
       const w = window.game.scene.getScene('WorldScene');
-      w.warpTo(10, 6);
       w.state.party.forEach(m => { m.hp = 0; });
       w.onBattleEnd('lose');
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 1200));   // blackout warp fades
       return { healed: w.state.party.every(m => m.hp === m.maxHp),
-               at: { c: w.player.col, r: w.player.row } };
+               map: w.map.name, at: { c: w.player.col, r: w.player.row } };
     });
     check('party healed on blackout', blackout.healed);
-    check('warped to spawn', blackout.at.c === 3 && blackout.at.r === 6, JSON.stringify(blackout.at));
+    check('returned to start map', blackout.map === 'town', `${blackout.map} ${JSON.stringify(blackout.at)}`);
 
     log('\n[9] HEAL TILE + SIGNS');
     const world = await page.evaluate(async () => {
       const w = window.game.scene.getScene('WorldScene');
       w.state.party[0].hp = 1;
-      w.warpTo(3, 3);
-      w.onStepComplete(3, 3);
+      w.placePlayer(4, 3, 'down');                  // the rest house floor
+      w.onStepComplete(4, 3);
       const healed = w.state.party[0].hp === w.state.party[0].maxHp;
-      // Face the sign at 1,5 from 1,6
-      w.warpTo(1, 6); w.player.facing = 'up';
+      // Stand beside the town sign at (2,7) and face it.
+      w.placePlayer(3, 7, 'left');
       w.interact();
       const toastVisible = w.toastText.visible && w.toastText.text.includes('MAAZ TOWN');
       return { healed, toastVisible };

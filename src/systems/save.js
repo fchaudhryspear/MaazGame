@@ -9,14 +9,17 @@ import { CONFIG } from '../config.js';
 import { SPECIES, STARTING_BAG } from '../data/monsters.js';
 import { makeMonster } from './monster.js';
 
-const VERSION = 1;
+// v2 added `mapId` for the multi-area world. Older saves have no map and
+// are not upgradeable to a meaningful position, so they are discarded.
+const VERSION = 2;
 
 export function newGameState() {
   return {
     version: VERSION,
     party: [makeMonster('maaz', 5)],
     bag: { ...STARTING_BAG },
-    pos: null,          // null -> use the map's spawn point
+    mapId: null,        // null -> use the world's start map
+    pos: null,          // null -> use that map's spawn point
     seen: [],           // species keys encountered (a mini pokédex)
     caught: [],         // species keys captured
     playtimeMs: 0,
@@ -31,6 +34,7 @@ function serialize(state) {
       moves: m.moves,
     })),
     bag: state.bag,
+    mapId: state.mapId,
     pos: state.pos,
     seen: state.seen,
     caught: state.caught,
@@ -59,6 +63,7 @@ function deserialize(raw) {
     version: VERSION,
     party,
     bag: { ...STARTING_BAG, ...(data.bag || {}) },
+    mapId: typeof data.mapId === 'string' ? data.mapId : null,
     pos: data.pos ?? null,
     seen: Array.isArray(data.seen) ? data.seen : [],
     caught: Array.isArray(data.caught) ? data.caught : [],
