@@ -1,0 +1,28 @@
+{
+  "start": {
+    "map": "town",
+    "col": 4,
+    "row": 7,
+    "facing": "down"
+  },
+  "maps": {
+    "town": {
+      "file": "town.json",
+      "displayName": "MAAZ TOWN",
+      "width": 20,
+      "height": 15
+    },
+    "route1": {
+      "file": "route1.json",
+      "displayName": "ROUTE 1",
+      "width": 20,
+      "height": 15
+    },
+    "cave": {
+      "file": "cave.json",
+      "displayName": "MAAZ CAVE",
+      "width": 15,
+      "height": 12
+    }
+  }
+}

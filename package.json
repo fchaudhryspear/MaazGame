@@ -1,0 +1,16 @@
+{
+  "name": "maazgame",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "A mobile-first, Pokemon Emerald-style grid RPG built with Phaser 3.",
+  "scripts": {
+    "start": "./play.sh",
+    "serve": "python3 -m http.server 8000",
+    "maps": "node tools/build-maps.mjs",
+    "test": "node tests/smoke.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

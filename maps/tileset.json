@@ -1,0 +1,294 @@
+{
+  "columns": 0,
+  "grid": {
+    "height": 32,
+    "orientation": "orthogonal",
+    "width": 32
+  },
+  "margin": 0,
+  "name": "maaz",
+  "spacing": 0,
+  "tilecount": 11,
+  "tiledversion": "1.10.2",
+  "tileheight": 32,
+  "tilewidth": 32,
+  "type": "tileset",
+  "version": "1.10",
+  "tiles": [
+    {
+      "id": 0,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_path"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "path"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": true
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_grass"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "grass"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": true
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_tall"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "tallgrass"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": true
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_tree"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "tree"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": false
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_wall"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "wall"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": false
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_water"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "water"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": false
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_floor"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "floor"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": true
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_sign"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "sign"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": false
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_cave"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "cavefloor"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": true
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_rock"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "rock"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": false
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "properties": [
+        {
+          "name": "textureKey",
+          "type": "string",
+          "value": "tile_rubble"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "value": "rubble"
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": true
+        },
+        {
+          "name": "encounter",
+          "type": "bool",
+          "value": true
+        }
+      ]
+    }
+  ]
+}

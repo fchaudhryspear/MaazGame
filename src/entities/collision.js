@@ -1,9 +1,11 @@
 // =========================================================================
 //  COLLISION MATRIX
-//  Precomputes a boolean[row][col] grid of blocked tiles from the map data,
+//  Precomputes a boolean[row][col] grid of blocked tiles for a loaded map,
 //  so movement checks are O(1) lookups instead of re-reading tile configs.
+//
+//  Walkability comes from the map's own tileset, so a map is fully
+//  self-describing — nothing here needs to know what a "tree" is.
 // =========================================================================
-import { TILES } from '../data/world.js';
 
 export class CollisionMatrix {
   constructor(map) {
@@ -11,14 +13,14 @@ export class CollisionMatrix {
     this.rows = map.rows;
     this.blocked = [];
 
+    const blocks = (id) => id >= 0 && map.tiles[id] && !map.tiles[id].walkable;
+
     for (let r = 0; r < map.rows; r++) {
       const row = [];
       for (let c = 0; c < map.cols; c++) {
-        const groundId = map.ground[r][c];
-        const decorId = map.decor[r][c];
-        const groundBlocks = groundId >= 0 && !TILES[groundId].walkable;
-        const decorBlocks = decorId >= 0 && !TILES[decorId].walkable;
-        row.push(groundBlocks || decorBlocks);
+        const ground = map.ground[r][c];
+        const decor = map.decor ? map.decor[r][c] : -1;
+        row.push(blocks(ground) || blocks(decor));
       }
       this.blocked.push(row);
     }

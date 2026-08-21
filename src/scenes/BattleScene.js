@@ -12,7 +12,12 @@ import { MOVES, ITEMS, TYPE_COLORS } from '../data/monsters.js';
 import {
   computeDamage, effectivenessText, orderActions, isFainted,
   gainXp, xpFromDefeat, xpToNext, rollCatch,
+  tryPinchHeal, heldBlocksStatus, heldItem, rollQuickClaw,
 } from '../systems/monster.js';
+import {
+  inflictStatus, statusTick, rollStatusSkip, cureStatus,
+  statusName, statusColor,
+} from '../systems/status.js';
 import { typeMultiplier } from '../data/monsters.js';
 import { buildMonster, buildBall } from '../assets.js';
 import { panel, label, button, typeBadge, UIGroup } from '../ui/widgets.js';
@@ -24,9 +29,15 @@ export class BattleScene extends Phaser.Scene {
   }
 
   init(data) {
-    this.state = data.state;           // { party, bag, seen, caught }
-    this.enemyMon = data.enemyMon;
+    this.state = data.state;           // { party, bag, seen, caught, ... }
     this.onEnd = data.onEnd;
+
+    // A trainer battle fields a team; a wild battle is a single monster.
+    this.trainer = data.trainer || null;
+    this.enemyTeam = this.trainer ? this.trainer.team : [data.enemyMon];
+    this.enemyIndex = 0;
+    this.enemyMon = this.enemyTeam[0];
+    this.isTrainerBattle = !!this.trainer;
 
     this.activeIndex = this.state.party.findIndex((m) => !isFainted(m));
     if (this.activeIndex < 0) this.activeIndex = 0;
@@ -53,9 +64,9 @@ export class BattleScene extends Phaser.Scene {
     buildBall(this);
     this._buildScene();
 
-    // Record the sighting for the mini-pokédex.
-    if (!this.state.seen.includes(this.enemyMon.speciesKey)) {
-      this.state.seen.push(this.enemyMon.speciesKey);
+    // Record sightings for the mini-pokédex.
+    for (const mon of this.enemyTeam) {
+      if (!this.state.seen.includes(mon.speciesKey)) this.state.seen.push(mon.speciesKey);
     }
 
     this.start();
@@ -98,19 +109,30 @@ export class BattleScene extends Phaser.Scene {
     this._drawPlayerPanel();
   }
 
+  // Panels are laid out in fixed rows so the status badge and held-item
+  // marker never collide with the HP bar:
+  //   row 1  name .............. level
+  //   row 2  status  ◆held ...... type
+  //   row 3  HP bar        (player also gets HP text + XP bar below)
   _drawEnemyPanel() {
     this.enemyPanelGroup.destroy();
     const g = this.enemyPanelGroup;
     const x = 16, y = 20, mon = this.enemyMon;
 
-    g.add(panel(this, x, y, 184, 44, 50));
+    g.add(panel(this, x, y, 184, 54, 50));
     g.add(label(this, x + 8, y + 6, mon.name, { size: '12px', depth: 51 }));
     g.add(label(this, x + 176, y + 6, `Lv${mon.level}`, {
       size: '11px', originX: 1, depth: 51,
     }));
-    g.add(typeBadge(this, x + 176, y + 22, mon.type, TYPE_COLORS[mon.type], 51));
 
-    const barX = x + 8, barY = y + 32, barW = 120;
+    g.add(typeBadge(this, x + 176, y + 22, mon.type, TYPE_COLORS[mon.type], 51));
+    if (mon.status) {
+      g.add(label(this, x + 8, y + 23, statusName(mon.status), {
+        size: '9px', color: statusColor(mon.status), depth: 51,
+      }));
+    }
+
+    const barX = x + 8, barY = y + 44, barW = 120;
     g.add(this.add.rectangle(barX, barY, barW, 7, 0x333333)
       .setOrigin(0, 0.5).setScrollFactor(0).setDepth(51));
     this.enemyBar = this.add.rectangle(barX, barY, barW, 7, 0x54b35a)
@@ -123,16 +145,29 @@ export class BattleScene extends Phaser.Scene {
   _drawPlayerPanel() {
     this.playerPanelGroup.destroy();
     const g = this.playerPanelGroup;
-    const x = 280, y = 150, mon = this.playerMon;
+    const x = 280, y = 142, mon = this.playerMon;
 
-    g.add(panel(this, x, y, 184, 58, 50));
+    g.add(panel(this, x, y, 184, 70, 50));
     g.add(label(this, x + 8, y + 6, mon.name, { size: '12px', depth: 51 }));
     g.add(label(this, x + 176, y + 6, `Lv${mon.level}`, {
       size: '11px', originX: 1, depth: 51,
     }));
-    g.add(typeBadge(this, x + 176, y + 21, mon.type, TYPE_COLORS[mon.type], 51));
 
-    const barX = x + 8, barY = y + 32, barW = 120;
+    g.add(typeBadge(this, x + 176, y + 22, mon.type, TYPE_COLORS[mon.type], 51));
+    if (mon.status) {
+      g.add(label(this, x + 8, y + 23, statusName(mon.status), {
+        size: '9px', color: statusColor(mon.status), depth: 51,
+      }));
+    }
+    // Held item marker, so a berry or booster in play is visible.
+    const item = heldItem(mon);
+    if (item) {
+      g.add(label(this, x + 38, y + 24, `◆${item.name}`, {
+        size: '8px', color: '#c9e0a0', depth: 51,
+      }));
+    }
+
+    const barX = x + 8, barY = y + 44, barW = 120;
     g.add(this.add.rectangle(barX, barY, barW, 7, 0x333333)
       .setOrigin(0, 0.5).setScrollFactor(0).setDepth(51));
     this.playerBar = this.add.rectangle(barX, barY, barW, 7, 0x54b35a)
@@ -141,15 +176,15 @@ export class BattleScene extends Phaser.Scene {
     this.playerBar.scaleX = mon.hp / mon.maxHp;
     this._setBarColor(this.playerBar, this.playerBar.scaleX);
 
-    this.playerHpText = label(this, x + 176, y + 40, `${mon.hp}/${mon.maxHp}`, {
+    this.playerHpText = label(this, x + 176, y + 39, `${mon.hp}/${mon.maxHp}`, {
       size: '10px', originX: 1, depth: 51,
     });
     g.add(this.playerHpText);
 
     // Thin XP bar along the bottom of the panel.
-    g.add(this.add.rectangle(barX, y + 52, barW, 3, 0x2a3550)
+    g.add(this.add.rectangle(barX, y + 60, barW, 3, 0x2a3550)
       .setOrigin(0, 0.5).setScrollFactor(0).setDepth(51));
-    this.xpBar = this.add.rectangle(barX, y + 52, barW, 3, 0x5aa9e6)
+    this.xpBar = this.add.rectangle(barX, y + 60, barW, 3, 0x5aa9e6)
       .setOrigin(0, 0.5).setScrollFactor(0).setDepth(52);
     g.add(this.xpBar);
     this.xpBar.scaleX = Math.min(1, mon.xp / xpToNext(mon.level));
@@ -296,9 +331,21 @@ export class BattleScene extends Phaser.Scene {
 
   // ---- turn resolution -------------------------------------------------
   async start() {
-    await this.message(`A wild ${this.enemyMon.name} appeared!`);
+    if (this.isTrainerBattle) {
+      await this.message(`${this.trainer.name} wants to battle!`);
+      await this.message(`${this.trainer.name} sent out ${this.enemyMon.name}!`);
+    } else {
+      await this.message(`A wild ${this.enemyMon.name} appeared!`);
+    }
     await this.message(`Go! ${this.playerMon.name}!`);
     this.openMenu();
+  }
+
+  // How the enemy is referred to in messages.
+  get enemyLabel() {
+    return this.isTrainerBattle
+      ? `${this.trainer.name}'s ${this.enemyMon.name}`
+      : `Wild ${this.enemyMon.name}`;
   }
 
   // Enemy AI: usually picks its most effective move, sometimes rolls at
@@ -331,6 +378,7 @@ export class BattleScene extends Phaser.Scene {
         target: this.enemyMon,
         stages: this.stages.player,
         isPlayer: true,
+        quickClaw: rollQuickClaw(this.playerMon),
       },
       {
         kind: 'move',
@@ -339,6 +387,7 @@ export class BattleScene extends Phaser.Scene {
         target: this.playerMon,
         stages: this.stages.enemy,
         isPlayer: false,
+        quickClaw: rollQuickClaw(this.enemyMon),
       },
     ]);
 
@@ -351,11 +400,53 @@ export class BattleScene extends Phaser.Scene {
       await this.resolveAction(act);
 
       if (this.finished) return;
-      if (isFainted(this.enemyMon)) { await this.win(); return; }
+      if (isFainted(this.enemyMon)) { await this.enemyDefeated(); return; }
       if (isFainted(this.playerMon)) { await this.playerFainted(); return; }
     }
 
+    await this.endOfTurn();
+    if (this.finished) return;
     this.openMenu();
+  }
+
+  // Burn and poison chip HP once both sides have acted.
+  async endOfTurn() {
+    for (const who of ['player', 'enemy']) {
+      const mon = who === 'player' ? this.playerMon : this.enemyMon;
+      if (isFainted(mon)) continue;
+
+      const tick = statusTick(mon);
+      if (tick) {
+        SFX.weakHit();
+        const bar = who === 'player' ? this.playerBar : this.enemyBar;
+        await this.animateBar(bar, mon.hp / mon.maxHp);
+        if (who === 'player') this._refreshPlayerHud();
+        await this.message(tick.text);
+      }
+
+      // A pinch berry can save a monster right after the tick.
+      await this.checkPinchHeal(who);
+
+      if (isFainted(mon)) {
+        if (who === 'enemy') { await this.enemyDefeated(); return; }
+        await this.playerFainted();
+        return;
+      }
+    }
+  }
+
+  // Fire a held pinch-heal berry if HP dropped low enough.
+  async checkPinchHeal(who) {
+    const mon = who === 'player' ? this.playerMon : this.enemyMon;
+    const res = tryPinchHeal(mon);
+    if (!res) return;
+
+    SFX.heal();
+    const bar = who === 'player' ? this.playerBar : this.enemyBar;
+    await this.animateBar(bar, mon.hp / mon.maxHp);
+    if (who === 'player') { this._refreshPlayerHud(); this._drawPlayerPanel(); }
+    else this._drawEnemyPanel();
+    await this.message(`${mon.name}'s ${res.itemName} restored ${res.healed} HP!`);
   }
 
   async resolveAction(act) {
@@ -366,12 +457,29 @@ export class BattleScene extends Phaser.Scene {
 
   async doMove(act) {
     const move = MOVES[act.move];
-    const userName = act.isPlayer ? this.playerMon.name : `Wild ${this.enemyMon.name}`;
+    const userName = act.isPlayer ? this.playerMon.name : this.enemyLabel;
+
+    // Paralysis is rolled before the move is announced, as in the source games.
+    const skip = rollStatusSkip(act.user);
+    if (skip.skipped) {
+      SFX.cancel();
+      await this.message(skip.text);
+      return;
+    }
+
     await this.message(`${userName} used ${move.name}!`);
 
     if (Math.random() * 100 > move.accuracy) {
       SFX.miss();
       await this.message('But it missed!');
+      return;
+    }
+
+    // Condition move: inflict burn / poison / paralysis.
+    if (!move.power && move.inflict) {
+      const target = act.isPlayer ? this.enemyMon : this.playerMon;
+      const targetName = act.isPlayer ? this.enemyLabel : this.playerMon.name;
+      await this.applyStatus(target, move.inflict, targetName, !act.isPlayer);
       return;
     }
 
@@ -382,7 +490,7 @@ export class BattleScene extends Phaser.Scene {
         ? (act.isPlayer ? this.stages.player : this.stages.enemy)
         : (act.isPlayer ? this.stages.enemy : this.stages.player);
       const targetName = toSelf ? userName
-        : (act.isPlayer ? `Wild ${this.enemyMon.name}` : this.playerMon.name);
+        : (act.isPlayer ? this.enemyLabel : this.playerMon.name);
 
       const stat = move.effect.stat;
       stages[stat] = Math.max(-6, Math.min(6, stages[stat] + move.effect.stages));
@@ -418,11 +526,41 @@ export class BattleScene extends Phaser.Scene {
     const effText = effectivenessText(multiplier);
     if (effText) await this.message(effText);
 
+    // Secondary effect: some damaging moves can also inflict a condition.
+    if (move.inflictChance && !isFainted(act.target)
+        && Math.random() < move.inflictChance.chance) {
+      const targetName = targetIsEnemy ? this.enemyLabel : this.playerMon.name;
+      await this.applyStatus(act.target, move.inflictChance.status, targetName, !targetIsEnemy);
+    }
+
+    if (!isFainted(act.target)) {
+      await this.checkPinchHeal(targetIsEnemy ? 'enemy' : 'player');
+    }
+
     if (isFainted(act.target)) {
-      const faintName = targetIsEnemy ? `Wild ${this.enemyMon.name}` : this.playerMon.name;
+      const faintName = targetIsEnemy ? this.enemyLabel : this.playerMon.name;
       SFX.faint();
       this.tweens.add({ targets: spr, y: spr.y + 18, alpha: 0, duration: 320 });
       await this.message(`${faintName} fainted!`);
+    }
+  }
+
+  // Apply a condition, respecting immunities and held guards, then redraw
+  // the affected panel so its badge appears.
+  async applyStatus(target, statusKey, targetName, isPlayerTarget) {
+    if (heldBlocksStatus(target, statusKey)) {
+      const item = heldItem(target);
+      await this.message(`${targetName}'s ${item.name} blocked it!`);
+      return;
+    }
+
+    const res = inflictStatus(target, statusKey);
+    if (res.text) {
+      if (res.applied) SFX.hit(); else SFX.miss();
+      await this.message(res.text);
+    }
+    if (res.applied) {
+      if (isPlayerTarget) this._drawPlayerPanel(); else this._drawEnemyPanel();
     }
   }
 
@@ -446,6 +584,20 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
+    if (item.kind === 'cure') {
+      const mon = this.playerMon;
+      if (!mon.status) {
+        await this.message('It would have no effect!');
+        return;   // don't consume it
+      }
+      this.state.bag[key]--;
+      const had = statusName(cureStatus(mon));
+      SFX.heal();
+      this._drawPlayerPanel();
+      await this.message(`${mon.name} was cured of ${had}!`);
+      return;
+    }
+
     if (item.kind === 'ball') {
       this.state.bag[key]--;
       await this.throwBall(item);
@@ -454,6 +606,15 @@ export class BattleScene extends Phaser.Scene {
 
   // Animate a thrown ball, wobble it, then report the result.
   async throwBall(item) {
+    if (this.isTrainerBattle) {
+      // Refund it — stealing another trainer's monster isn't allowed.
+      this.state.bag[
+        Object.keys(ITEMS).find((k) => ITEMS[k] === item)
+      ]++;
+      await this.message("You can't catch another trainer's monster!");
+      return;
+    }
+
     await this.message(`You threw a ${item.name}!`);
     SFX.ballThrow();
 
@@ -541,6 +702,12 @@ export class BattleScene extends Phaser.Scene {
     this.busy = true;
     this.menu.destroy();
 
+    if (this.isTrainerBattle) {
+      await this.message("There's no running from a trainer battle!");
+      this.openMenu();
+      return;
+    }
+
     const chance = 0.5 + (this.playerMon.spd - this.enemyMon.spd) * 0.06;
     if (Math.random() < Math.max(0.3, Math.min(0.95, chance))) {
       await this.message('Got away safely!');
@@ -555,13 +722,15 @@ export class BattleScene extends Phaser.Scene {
       stages: this.stages.enemy, isPlayer: false,
     });
     if (isFainted(this.playerMon)) { await this.playerFainted(); return; }
+    await this.endOfTurn();
+    if (this.finished) return;
     this.openMenu();
   }
 
-  async win() {
-    SFX.victory();
-    await this.message(`Wild ${this.enemyMon.name} was defeated!`);
-
+  // One enemy went down. Award XP, then either send out the trainer's next
+  // monster or end the battle.
+  async enemyDefeated() {
+    if (!this.isTrainerBattle) SFX.victory();
     const mon = this.playerMon;
     const xp = xpFromDefeat(this.enemyMon);
     const report = gainXp(mon, xp);
@@ -573,6 +742,43 @@ export class BattleScene extends Phaser.Scene {
       this.cameras.main.flash(200, 255, 255, 180);
       await this.message(`${mon.name} grew to level ${lv.level}!`);
       if (lv.learned) await this.message(`${mon.name} learned ${MOVES[lv.learned].name}!`);
+    }
+
+    // Trainer with monsters left: send out the next one and continue.
+    const next = this.enemyTeam.findIndex((m, i) => i > this.enemyIndex && !isFainted(m));
+    if (this.isTrainerBattle && next !== -1) {
+      this.enemyIndex = next;
+      this.enemyMon = this.enemyTeam[next];
+      this.stages.enemy = { atk: 0, def: 0, spd: 0 };
+
+      buildMonster(this, 'mon_' + this.enemyMon.speciesKey, this.enemyMon.color);
+      this.enemySprite.setTexture('mon_' + this.enemyMon.speciesKey);
+      this.enemySprite.setAlpha(1).setScale(1.5);
+      this.enemySprite.y = 96;
+      this._drawEnemyPanel();
+
+      await this.message(`${this.trainer.name} sent out ${this.enemyMon.name}!`);
+      this.openMenu();
+      return;
+    }
+
+    await this.win();
+  }
+
+  async win() {
+    SFX.victory();
+    if (this.isTrainerBattle) {
+      await this.message(`You defeated ${this.trainer.name}!`);
+      // Record the win so the trainer never re-challenges.
+      if (!this.state.defeatedTrainers.includes(this.trainer.key)) {
+        this.state.defeatedTrainers.push(this.trainer.key);
+      }
+      if (this.trainer.reward) {
+        this.state.money = (this.state.money || 0) + this.trainer.reward;
+        await this.message(`You got ${this.trainer.reward} coins for winning!`);
+      }
+      this.endBattle('trainerWin');
+      return;
     }
 
     this.endBattle('win');

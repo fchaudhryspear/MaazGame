@@ -70,6 +70,66 @@ function makeFloor(scene, key) {
   g.destroy();
 }
 
+// Cave interior: dark stone floor with speckles, and a solid rock wall.
+function makeCaveFloor(scene, key) {
+  const t = CONFIG.TILE;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(0x4a4438, 1).fillRect(0, 0, t, t);
+  g.lineStyle(1, 0x3a352c, 1).strokeRect(0.5, 0.5, t - 1, t - 1);
+  g.fillStyle(0x565042, 1);
+  g.fillRect(6, 8, 3, 3);
+  g.fillRect(20, 16, 4, 3);
+  g.fillRect(13, 23, 3, 2);
+  g.generateTexture(key, t, t);
+  g.destroy();
+}
+
+function makeRock(scene, key) {
+  const t = CONFIG.TILE;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  // Deliberately much darker and flatter than the cave floor: the player has
+  // to be able to tell a wall from walkable rubble at a glance.
+  g.fillStyle(0x2b2721, 1).fillRect(0, 0, t, t);
+  g.fillStyle(0x3b352c, 1).fillRect(2, 2, t - 4, t - 6);   // blocky face
+  g.fillStyle(0x4a4238, 1).fillRect(2, 2, t - 4, 3);       // lit top edge
+  g.lineStyle(1, 0x1d1a15, 1).strokeRect(0.5, 0.5, t - 1, t - 1);
+  // Mortar lines so it reads as solid rock rather than empty space.
+  g.lineStyle(1, 0x241f1a, 1);
+  g.beginPath(); g.moveTo(2, 13); g.lineTo(t - 2, 13); g.strokePath();
+  g.beginPath(); g.moveTo(14, 13); g.lineTo(14, 2); g.strokePath();
+  g.beginPath(); g.moveTo(20, 26); g.lineTo(20, 13); g.strokePath();
+  g.generateTexture(key, t, t);
+  g.destroy();
+}
+
+// Rubble: the cave's equivalent of tall grass, where wild monsters hide.
+// Pale crystal shards on the normal floor, so it never reads as a wall.
+function makeRubble(scene, key) {
+  const t = CONFIG.TILE;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(0x4a4438, 1).fillRect(0, 0, t, t);           // same floor base
+  g.lineStyle(1, 0x3a352c, 1).strokeRect(0.5, 0.5, t - 1, t - 1);
+
+  // Upward crystal shards — clearly "stuff growing on the floor".
+  const shard = (x, baseY, h, w, color) => {
+    g.fillStyle(color, 1);
+    g.beginPath();
+    g.moveTo(x, baseY);
+    g.lineTo(x - w, baseY - h * 0.55);
+    g.lineTo(x, baseY - h);
+    g.lineTo(x + w, baseY - h * 0.55);
+    g.closePath();
+    g.fillPath();
+  };
+  shard(8, t - 5, 15, 4, 0x7fa8c9);
+  shard(17, t - 3, 20, 5, 0x9dc4e0);
+  shard(25, t - 6, 12, 3, 0x6f96b5);
+  g.fillStyle(0xd6ecf7, 0.9);
+  g.fillRect(16, t - 20, 1, 8);                            // glint
+  g.generateTexture(key, t, t);
+  g.destroy();
+}
+
 export function buildTiles(scene) {
   makeTile(scene, 'tile_path',  0xcdae7a, 0xb89a68);
   makeTile(scene, 'tile_grass', 0x54b35a, 0x469a4c);
@@ -79,6 +139,9 @@ export function buildTiles(scene) {
   makeTile(scene, 'tile_water', 0x3d7bd6, 0x2f61ab);
   makeFloor(scene, 'tile_floor');
   makeSign(scene, 'tile_sign');
+  makeCaveFloor(scene, 'tile_cave');
+  makeRock(scene, 'tile_rock');
+  makeRubble(scene, 'tile_rubble');
 }
 
 // --- player --------------------------------------------------------------
@@ -139,6 +202,77 @@ export function buildPlayerSheet(scene) {
       tex.add(frame++, 0, c * t, r * t, t, t);
     }
   }
+}
+
+// --- people --------------------------------------------------------------
+
+// NPCs and trainers reuse the player's silhouette in their own colour, so
+// they read as characters without needing a second art pipeline.
+export function buildPerson(scene, key, color) {
+  if (scene.textures.exists(key)) return;
+  const t = CONFIG.TILE;
+  const cols = 4;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  const dirs = ['down', 'left', 'right', 'up'];
+
+  dirs.forEach((dir, i) => {
+    const ox = i * t;
+    const cx = ox + t / 2;
+    const bodyTop = 12;
+    const bodyBot = t - 4;
+
+    // Ground shadow, so a character never floats on the tile.
+    g.fillStyle(0x000000, 0.22);
+    g.fillEllipse(cx, bodyBot - 1, 18, 6);
+
+    g.fillStyle(0x27364a, 1);
+    g.fillRect(cx - 5, bodyBot - 6, 4, 6);
+    g.fillRect(cx + 1, bodyBot - 6, 4, 6);
+
+    // Dark outline behind the torso and head. Without it a character whose
+    // colour is close to the terrain (a green camper on grass) disappears.
+    g.fillStyle(0x1b1b22, 1);
+    g.fillRect(cx - 7, bodyTop - 1, 14, bodyBot - bodyTop - 2);
+    g.fillCircle(cx, bodyTop - 2, 7);
+
+    g.fillStyle(color, 1);
+    g.fillRect(cx - 6, bodyTop, 12, bodyBot - bodyTop - 4);
+
+    g.fillStyle(0xf0c98a, 1);
+    g.fillCircle(cx, bodyTop - 2, 6);
+
+    g.fillStyle(0x2a1d12, 1);
+    if (dir === 'up') g.fillCircle(cx, bodyTop - 2, 6);
+    else if (dir === 'down') g.fillRect(cx - 6, bodyTop - 8, 12, 4);
+    else if (dir === 'left') g.fillRect(cx - 6, bodyTop - 8, 8, 4);
+    else g.fillRect(cx - 2, bodyTop - 8, 8, 4);
+
+    if (dir !== 'up') {
+      g.fillStyle(0x1a1a1a, 1);
+      if (dir === 'left') g.fillRect(cx - 4, bodyTop - 3, 2, 2);
+      else if (dir === 'right') g.fillRect(cx + 2, bodyTop - 3, 2, 2);
+      else { g.fillRect(cx - 4, bodyTop - 3, 2, 2); g.fillRect(cx + 2, bodyTop - 3, 2, 2); }
+    }
+  });
+
+  g.generateTexture(key, t * cols, t);
+  g.destroy();
+
+  const tex = scene.textures.get(key);
+  dirs.forEach((_, i) => tex.add(i, 0, i * t, 0, t, t));
+}
+
+// The "!" a trainer pops when it spots you.
+export function buildAlert(scene) {
+  if (scene.textures.exists('alert')) return;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(0xffffff, 1).fillRoundedRect(0, 0, 16, 18, 3);
+  g.lineStyle(1, 0x1a1a1a, 1).strokeRoundedRect(0.5, 0.5, 15, 17, 3);
+  g.fillStyle(0xd23b3b, 1);
+  g.fillRect(7, 4, 3, 7);
+  g.fillRect(7, 13, 3, 3);
+  g.generateTexture('alert', 16, 18);
+  g.destroy();
 }
 
 // --- battle --------------------------------------------------------------

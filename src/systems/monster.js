@@ -3,7 +3,8 @@
 //  Pure logic: no Phaser, no rendering. That keeps it easy to reason about
 //  (and to unit-test) independently of the battle UI.
 // =========================================================================
-import { SPECIES, MOVES, typeMultiplier } from '../data/monsters.js';
+import { SPECIES, MOVES, HELD_ITEMS, typeMultiplier } from '../data/monsters.js';
+import { statusStatMultiplier } from './status.js';
 
 // XP needed to go from `level` to `level + 1`.
 export function xpToNext(level) {
@@ -43,6 +44,8 @@ export function makeMonster(speciesKey, level) {
     color: s.color,
     level,
     xp: 0,
+    status: null,      // burn / poison / paralysis, or null
+    held: null,        // held item key, or null
     maxHp: st.maxHp,
     hp: st.maxHp,
     atk: st.atk,
@@ -54,8 +57,10 @@ export function makeMonster(speciesKey, level) {
 
 export const isFainted = (mon) => mon.hp <= 0;
 
+// A full heal also clears any lingering condition.
 export function healMonster(mon) {
   mon.hp = mon.maxHp;
+  mon.status = null;
   return mon;
 }
 
@@ -106,7 +111,8 @@ export function stageMultiplier(stage) {
 // `stages` is a per-battle { atk, def, spd } map owned by the battle scene,
 // so buffs vanish when the battle ends without touching the saved monster.
 export function effectiveStat(mon, stat, stages) {
-  return Math.max(1, Math.floor(mon[stat] * stageMultiplier(stages?.[stat] ?? 0)));
+  const staged = mon[stat] * stageMultiplier(stages?.[stat] ?? 0);
+  return Math.max(1, Math.floor(staged * statusStatMultiplier(mon, stat)));
 }
 
 // Damage with type effectiveness folded in. Returns { damage, multiplier }
@@ -120,12 +126,46 @@ export function computeDamage(attacker, defender, move, atkStages, defStages) {
   const multiplier = typeMultiplier(move.type, defender.type);
   // Same-type attack bonus, as in the source games.
   const stab = move.type === attacker.type ? 1.5 : 1;
+  const held = heldTypeBoost(attacker, move.type);
   const roll = 0.85 + Math.random() * 0.15;
 
   return {
-    damage: Math.max(1, Math.floor(base * multiplier * stab * roll)),
+    damage: Math.max(1, Math.floor(base * multiplier * stab * held * roll)),
     multiplier,
   };
+}
+
+// --- held items ----------------------------------------------------------
+
+export function heldItem(mon) {
+  return mon.held ? HELD_ITEMS[mon.held] || null : null;
+}
+
+// Damage multiplier from a type-boosting held item.
+export function heldTypeBoost(mon, moveType) {
+  const item = heldItem(mon);
+  if (item?.kind === 'typeBoost' && item.type === moveType) return item.multiplier;
+  return 1;
+}
+
+// True if a held item blocks this condition being inflicted.
+export function heldBlocksStatus(mon, statusKey) {
+  const item = heldItem(mon);
+  return item?.kind === 'statusGuard' && item.blocks === statusKey;
+}
+
+// A pinch-heal berry fires once when HP drops below its threshold, and is
+// consumed. Returns { healed, itemName } or null.
+export function tryPinchHeal(mon) {
+  const item = heldItem(mon);
+  if (item?.kind !== 'pinchHeal') return null;
+  if (mon.hp <= 0 || mon.hp / mon.maxHp > item.threshold) return null;
+
+  const healed = Math.min(item.amount, mon.maxHp - mon.hp);
+  if (healed <= 0) return null;
+  mon.hp += healed;
+  mon.held = null;                       // berries are eaten
+  return { healed, itemName: item.name };
 }
 
 // Wording for an effectiveness multiplier (null when it's neutral).
@@ -148,11 +188,20 @@ export function orderActions(actions) {
       if (rank(a) !== rank(b)) return rank(a) - rank(b);
     }
     if (pa !== pb) return pb - pa;
+    // Quick Claw is rolled once per action by the caller and cached on it.
+    if (!!a.quickClaw !== !!b.quickClaw) return a.quickClaw ? -1 : 1;
     const sa = effectiveStat(a.user, 'spd', a.stages);
     const sb = effectiveStat(b.user, 'spd', b.stages);
     if (sa !== sb) return sb - sa;
     return Math.random() < 0.5 ? -1 : 1;
   });
+}
+
+// Roll a held Quick Claw. Call once per action, before ordering.
+export function rollQuickClaw(mon) {
+  const item = heldItem(mon);
+  if (item?.kind !== 'quickClaw') return false;
+  return Math.random() < item.chance;
 }
 
 // Catch chance: weaker targets are easier, scaled by species rate and ball.
