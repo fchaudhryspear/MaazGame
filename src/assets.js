@@ -204,6 +204,77 @@ export function buildPlayerSheet(scene) {
   }
 }
 
+// --- people --------------------------------------------------------------
+
+// NPCs and trainers reuse the player's silhouette in their own colour, so
+// they read as characters without needing a second art pipeline.
+export function buildPerson(scene, key, color) {
+  if (scene.textures.exists(key)) return;
+  const t = CONFIG.TILE;
+  const cols = 4;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  const dirs = ['down', 'left', 'right', 'up'];
+
+  dirs.forEach((dir, i) => {
+    const ox = i * t;
+    const cx = ox + t / 2;
+    const bodyTop = 12;
+    const bodyBot = t - 4;
+
+    // Ground shadow, so a character never floats on the tile.
+    g.fillStyle(0x000000, 0.22);
+    g.fillEllipse(cx, bodyBot - 1, 18, 6);
+
+    g.fillStyle(0x27364a, 1);
+    g.fillRect(cx - 5, bodyBot - 6, 4, 6);
+    g.fillRect(cx + 1, bodyBot - 6, 4, 6);
+
+    // Dark outline behind the torso and head. Without it a character whose
+    // colour is close to the terrain (a green camper on grass) disappears.
+    g.fillStyle(0x1b1b22, 1);
+    g.fillRect(cx - 7, bodyTop - 1, 14, bodyBot - bodyTop - 2);
+    g.fillCircle(cx, bodyTop - 2, 7);
+
+    g.fillStyle(color, 1);
+    g.fillRect(cx - 6, bodyTop, 12, bodyBot - bodyTop - 4);
+
+    g.fillStyle(0xf0c98a, 1);
+    g.fillCircle(cx, bodyTop - 2, 6);
+
+    g.fillStyle(0x2a1d12, 1);
+    if (dir === 'up') g.fillCircle(cx, bodyTop - 2, 6);
+    else if (dir === 'down') g.fillRect(cx - 6, bodyTop - 8, 12, 4);
+    else if (dir === 'left') g.fillRect(cx - 6, bodyTop - 8, 8, 4);
+    else g.fillRect(cx - 2, bodyTop - 8, 8, 4);
+
+    if (dir !== 'up') {
+      g.fillStyle(0x1a1a1a, 1);
+      if (dir === 'left') g.fillRect(cx - 4, bodyTop - 3, 2, 2);
+      else if (dir === 'right') g.fillRect(cx + 2, bodyTop - 3, 2, 2);
+      else { g.fillRect(cx - 4, bodyTop - 3, 2, 2); g.fillRect(cx + 2, bodyTop - 3, 2, 2); }
+    }
+  });
+
+  g.generateTexture(key, t * cols, t);
+  g.destroy();
+
+  const tex = scene.textures.get(key);
+  dirs.forEach((_, i) => tex.add(i, 0, i * t, 0, t, t));
+}
+
+// The "!" a trainer pops when it spots you.
+export function buildAlert(scene) {
+  if (scene.textures.exists('alert')) return;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(0xffffff, 1).fillRoundedRect(0, 0, 16, 18, 3);
+  g.lineStyle(1, 0x1a1a1a, 1).strokeRoundedRect(0.5, 0.5, 15, 17, 3);
+  g.fillStyle(0xd23b3b, 1);
+  g.fillRect(7, 4, 3, 7);
+  g.fillRect(7, 13, 3, 3);
+  g.generateTexture('alert', 16, 18);
+  g.destroy();
+}
+
 // --- battle --------------------------------------------------------------
 
 // A placeholder battle monster: a coloured blob with eyes and feet.

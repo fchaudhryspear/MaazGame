@@ -68,6 +68,8 @@ export const MAPS = {
       { type: 'heal', name: 'rest_house', col: 4, row: 3, w: 2, h: 2 },
       { type: 'sign', name: 'town_sign', col: 2, row: 7,
         text: 'MAAZ TOWN\nThe road east leads to ROUTE 1.' },
+      { type: 'npc', name: 'town_kid', npc: 'townkid', col: 8, row: 6, facing: 'down' },
+      { type: 'npc', name: 'rest_helper', npc: 'nurse', col: 4, row: 4, facing: 'down' },
     ],
   },
 
@@ -99,6 +101,10 @@ export const MAPS = {
         toMap: 'cave', toCol: 1, toRow: 5, facing: 'right' },
       { type: 'sign', name: 'route_sign', col: 2, row: 6,
         text: 'ROUTE 1\nTall grass ahead.\nWild monsters live there!' },
+      { type: 'trainer', name: 'joey', trainer: 'youngster_joey',
+        col: 8, row: 6, facing: 'down' },
+      { type: 'trainer', name: 'rae', trainer: 'camper_rae',
+        col: 14, row: 8, facing: 'up' },
     ],
   },
 
@@ -123,6 +129,9 @@ export const MAPS = {
     objects: [
       { type: 'warp', name: 'to_route1', col: 0, row: 5,
         toMap: 'route1', toCol: 18, toRow: 7, facing: 'left' },
+      { type: 'npc', name: 'cave_hiker', npc: 'hiker', col: 3, row: 4, facing: 'down' },
+      { type: 'trainer', name: 'dell', trainer: 'miner_dell',
+        col: 9, row: 5, facing: 'left' },
     ],
   },
 };

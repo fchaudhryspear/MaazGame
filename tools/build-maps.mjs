@@ -14,6 +14,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LEGEND, TILE_ORDER, MAPS, START } from './mapsrc.mjs';
+import { NPCS, TRAINERS } from '../src/data/trainers.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'maps');
@@ -92,6 +93,10 @@ function buildObjects(mapName, objects) {
       if (o.facing) props.push(prop('facing', o.facing));
     } else if (o.type === 'sign') {
       props.push(prop('text', o.text));
+    } else if (o.type === 'npc') {
+      props.push(prop('npc', o.npc), prop('facing', o.facing || 'down'));
+    } else if (o.type === 'trainer') {
+      props.push(prop('trainer', o.trainer), prop('facing', o.facing || 'down'));
     }
     return {
       id: id++,
@@ -203,6 +208,32 @@ function validate(built) {
         const around = [[1, 0], [-1, 0], [0, 1], [0, -1]]
           .some(([dc, dr]) => isWalkable(map, col + dc, row + dr));
         if (!around) fail(name, `sign "${obj.name}" at (${col},${row}) is unreachable`);
+      }
+
+      // People occupy their tile, so it must be standable ground, and they
+      // must be reachable from at least one neighbouring tile to talk to.
+      if (obj.type === 'npc' || obj.type === 'trainer') {
+        if (!isWalkable(map, col, row)) {
+          fail(name, `${obj.type} "${obj.name}" stands on a blocked tile (${col},${row})`);
+        }
+        const reachable = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+          .some(([dc, dr]) => isWalkable(map, col + dc, row + dr));
+        if (!reachable) fail(name, `${obj.type} "${obj.name}" is unreachable`);
+
+        const key = obj.properties.find((p) => p.name === (obj.type === 'npc' ? 'npc' : 'trainer')).value;
+        const table = obj.type === 'npc' ? NPCS : TRAINERS;
+        if (!table[key]) fail(name, `${obj.type} "${obj.name}" references unknown id "${key}"`);
+      }
+
+      // A trainer's line of sight must not start inside a wall, or they can
+      // never actually spot the player.
+      if (obj.type === 'trainer') {
+        const facing = obj.properties.find((p) => p.name === 'facing').value;
+        const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[facing];
+        if (!d) fail(name, `trainer "${obj.name}" has invalid facing "${facing}"`);
+        else if (!isWalkable(map, col + d[0], row + d[1])) {
+          fail(name, `trainer "${obj.name}" faces a wall — it can never see the player`);
+        }
       }
 
       if (obj.type === 'heal') {

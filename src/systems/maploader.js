@@ -91,6 +91,7 @@ export async function loadMap(name) {
   const warps = {};
   const signs = {};
   const heals = new Set();
+  const people = [];   // NPCs and trainers, in map order
 
   for (const obj of objectLayer?.objects || []) {
     const p = propsToObject(obj.properties);
@@ -106,6 +107,14 @@ export async function loadMap(name) {
       };
     } else if (obj.type === 'sign') {
       signs[`${col},${row}`] = p.text || '';
+    } else if (obj.type === 'npc' || obj.type === 'trainer') {
+      people.push({
+        kind: obj.type,
+        name: obj.name,
+        id: obj.type === 'npc' ? p.npc : p.trainer,
+        col, row,
+        facing: p.facing || 'down',
+      });
     } else if (obj.type === 'heal') {
       // Heal pads may span several tiles.
       for (let r = 0; r < hTiles; r++) {
@@ -134,6 +143,7 @@ export async function loadMap(name) {
     warps,
     signs,
     heals,
+    people,
     encounters,
     spawn: {
       col: props.spawnCol ?? 0,

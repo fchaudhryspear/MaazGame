@@ -11,12 +11,16 @@ import { CONFIG, VIEW_W, VIEW_H } from '../config.js';
 import { SPECIES, ITEMS } from '../data/monsters.js';
 import { CollisionMatrix } from '../entities/collision.js';
 import { Player } from '../entities/player.js';
+import { Npc, buildTrainerTeam } from '../entities/npc.js';
+import { DialogueBox } from '../ui/dialogue.js';
+import { buildAlert } from '../assets.js';
 import { TouchControls } from '../ui/touch.js';
 import { EncounterManager } from '../systems/encounters.js';
 import { makeMonster, isFainted, healMonster, xpToNext } from '../systems/monster.js';
 import { newGameState, loadGame, saveGame } from '../systems/save.js';
 import { preloadAllMaps, loadMap, getCachedMap } from '../systems/maploader.js';
 import { buildTiles, buildPlayerSheet } from '../assets.js';
+import { TRAINERS } from '../data/trainers.js';
 import { panel, label, button, UIGroup } from '../ui/widgets.js';
 import { SFX, unlock as unlockAudio, setMuted, isMuted } from '../systems/audio.js';
 
@@ -42,7 +46,10 @@ export class WorldScene extends Phaser.Scene {
     this.menuOpen = false;
     this.encounterActive = false;
     this.warping = false;
+    this.busy = false;          // a conversation or cutscene owns input
+    this.npcs = [];
     this.menuGroup = new UIGroup();
+    buildAlert(this);
 
     // Place the player before the first map render so the camera has a
     // target to follow immediately.
@@ -57,6 +64,7 @@ export class WorldScene extends Phaser.Scene {
     this.player.faceIdle();
 
     this._renderMap(first);
+    this._spawnPeople(first);
     this._setupCamera(first);
     this._setupInput();
 
@@ -69,6 +77,7 @@ export class WorldScene extends Phaser.Scene {
       onEncounter: () => this.startBattle(),
     });
 
+    this.dialogue = new DialogueBox(this);
     this._buildHud();
     this._buildToast();
     this._refreshHud();
@@ -94,6 +103,42 @@ export class WorldScene extends Phaser.Scene {
       return { col: saved.col, row: saved.row, facing: saved.facing || map.spawn.facing };
     }
     return { col: map.spawn.col, row: map.spawn.row, facing: map.spawn.facing };
+  }
+
+  // ---- people ----------------------------------------------------------
+  // Spawn the map's NPCs and trainers, skipping trainers already beaten so
+  // they don't re-challenge, and marking their tiles as blocked.
+  _spawnPeople(map) {
+    this.npcs.forEach((n) => n.destroy());
+    this.npcs = [];
+
+    for (const spec of map.people || []) {
+      if (spec.kind === 'trainer' && this.isTrainerDefeated(map.name, spec.name)) {
+        // Beaten trainers stay put as ordinary talkers.
+        this.npcs.push(new Npc(this, spec));
+      } else {
+        this.npcs.push(new Npc(this, spec));
+      }
+    }
+
+    // People block their tile — walking through someone would look wrong.
+    for (const npc of this.npcs) {
+      if (npc.row < this.matrix.rows && npc.col < this.matrix.cols) {
+        this.matrix.blocked[npc.row][npc.col] = true;
+      }
+    }
+  }
+
+  npcAt(col, row) {
+    return this.npcs.find((n) => n.col === col && n.row === row) || null;
+  }
+
+  trainerKey(mapName, objName) {
+    return `${mapName}:${objName}`;
+  }
+
+  isTrainerDefeated(mapName, objName) {
+    return this.state.defeatedTrainers.includes(this.trainerKey(mapName, objName));
   }
 
   // ---- map rendering ---------------------------------------------------
@@ -152,6 +197,7 @@ export class WorldScene extends Phaser.Scene {
     this.player.matrix = this.matrix;
 
     this._renderMap(map);
+    this._spawnPeople(map);
     this._setupCamera(map);
     this.placePlayer(col, row, facing);
 
@@ -246,9 +292,14 @@ export class WorldScene extends Phaser.Scene {
   // ---- interaction -----------------------------------------------------
   interact() {
     unlockAudio();
-    if (this.menuOpen || this.encounterActive || this.warping) return;
+    if (this.menuOpen || this.encounterActive || this.warping || this.busy) return;
 
     const { col, row } = this.player.facingTile();
+
+    // People first — they stand on tiles a sign never would.
+    const npc = this.npcAt(col, row);
+    if (npc) { this.talkTo(npc); return; }
+
     const sign = this.map.signs[`${col},${row}`];
     if (sign) {
       SFX.select();
@@ -259,10 +310,74 @@ export class WorldScene extends Phaser.Scene {
     SFX.cancel();
   }
 
+  // Face the player and run the character's dialogue. A trainer who has not
+  // yet been beaten challenges instead of chatting.
+  async talkTo(npc) {
+    this.busy = true;
+    this.touch.setVisible(false);
+    this.hideToast();
+    this.pressedDir = null;
+    npc.faceTowards(this.player.col, this.player.row);
+    SFX.select();
+
+    if (npc.kind === 'trainer' && !this.isTrainerDefeated(this.map.name, npc.name)) {
+      await this.dialogue.show(npc.def.intro, npc.displayName);
+      this.startTrainerBattle(npc);
+      return;
+    }
+
+    const lines = npc.kind === 'trainer'
+      ? [npc.def.afterLine]
+      : npc.def.lines;
+    await this.dialogue.show(lines, npc.displayName);
+
+    this.busy = false;
+    this.touch.setVisible(true);
+  }
+
+  // Any undefeated trainer watching the tile the player just stepped onto
+  // challenges them. Returns true if a challenge started.
+  _checkTrainerSight() {
+    if (this.busy || this.encounterActive || this.warping) return false;
+
+    for (const npc of this.npcs) {
+      if (npc.kind !== 'trainer') continue;
+      if (this.isTrainerDefeated(this.map.name, npc.name)) continue;
+      if (!npc.sees(this.player.col, this.player.row, this.matrix)) continue;
+
+      this.challengedBy = npc;
+      this._playAlert(npc);
+      return true;
+    }
+    return false;
+  }
+
+  // "!" pops over the trainer, then the challenge dialogue runs.
+  async _playAlert(npc) {
+    this.busy = true;
+    this.touch.setVisible(false);
+    this.pressedDir = null;
+    npc.faceTowards(this.player.col, this.player.row);
+    SFX.encounter();
+
+    const t = this.map.tileSize;
+    const mark = this.add
+      .image(npc.col * t + t / 2, npc.row * t + t / 2 - 22, 'alert')
+      .setDepth(50);
+    mark.setScale(0.4);
+    this.tweens.add({ targets: mark, scale: 1, duration: 220, ease: 'Back.out' });
+
+    await new Promise((res) => this.time.delayedCall(700, res));
+    mark.destroy();
+
+    await this.dialogue.show(npc.def.intro, npc.displayName);
+    this.startTrainerBattle(npc);
+  }
+
   // ---- pause menu ------------------------------------------------------
   toggleMenu() {
     unlockAudio();
-    if (this.encounterActive || this.warping) return;
+    if (this.encounterActive || this.warping || this.busy) return;
     this.menuOpen ? this.closeMenu() : this.openMenu();
   }
 
@@ -393,6 +508,36 @@ export class WorldScene extends Phaser.Scene {
     return true;
   }
 
+  // Launch a trainer battle: a full team, no catching and no running.
+  startTrainerBattle(npc) {
+    this.encounterActive = true;
+    this.busy = false;          // the battle scene owns input from here
+    this.touch.setVisible(false);
+    this.hideToast();
+    this.pressedDir = null;
+
+    const team = buildTrainerTeam(npc.id, makeMonster);
+
+    this.cameras.main.flash(300, 255, 255, 255);
+    this.time.delayedCall(320, () => {
+      this.input.enabled = false;
+      this.scene.launch('BattleScene', {
+        state: this.state,
+        trainer: {
+          key: this.trainerKey(this.map.name, npc.name),
+          id: npc.id,
+          name: npc.displayName,
+          team,
+          reward: npc.def.reward ?? 0,
+          defeatLine: npc.def.defeatLine,
+        },
+        onEnd: (result) => this.onBattleEnd(result),
+      });
+      this.scene.pause();
+    });
+    return true;
+  }
+
   onBattleEnd(result) {
     this.encounterActive = false;
     this.pressedDir = null;
@@ -410,6 +555,21 @@ export class WorldScene extends Phaser.Scene {
 
     this._refreshHud();
     this.persist();   // autosave after every battle
+
+    // A beaten trainer has a parting line; losing to one just returns you home.
+    if (result === 'trainerWin' && this.challengedBy) {
+      const npc = this.challengedBy;
+      this.challengedBy = null;
+      this.time.delayedCall(400, async () => {
+        this.busy = true;
+        this.touch.setVisible(false);
+        await this.dialogue.show([npc.def.defeatLine], npc.displayName);
+        this.busy = false;
+        this.touch.setVisible(true);
+      });
+    } else {
+      this.challengedBy = null;
+    }
   }
 
   // ---- steps -----------------------------------------------------------
@@ -436,6 +596,9 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
+    // A watching trainer interrupts before any wild encounter can roll.
+    if (this._checkTrainerSight()) return;
+
     const gId = this.map.ground[row][col];
     const tile = gId >= 0 ? this.map.tiles[gId] : null;
     if (tile && tile.encounter) this.encounters.onGrassStep();
@@ -456,7 +619,7 @@ export class WorldScene extends Phaser.Scene {
     // create() is async, so guard until the first map is in place.
     if (!this.ready) return;
     // Freeze the overworld while a battle, menu or transition owns the screen.
-    if (this.encounterActive || this.menuOpen || this.warping) return;
+    if (this.encounterActive || this.menuOpen || this.warping || this.busy) return;
 
     this.player.running = this.keys.run.isDown;
 

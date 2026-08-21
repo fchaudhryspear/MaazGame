@@ -384,6 +384,52 @@
               "value": "MAAZ TOWN\nThe road east leads to ROUTE 1."
             }
           ]
+        },
+        {
+          "id": 4,
+          "name": "town_kid",
+          "type": "npc",
+          "x": 256,
+          "y": 192,
+          "width": 32,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "npc",
+              "type": "string",
+              "value": "townkid"
+            },
+            {
+              "name": "facing",
+              "type": "string",
+              "value": "down"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "name": "rest_helper",
+          "type": "npc",
+          "x": 128,
+          "y": 128,
+          "width": 32,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "npc",
+              "type": "string",
+              "value": "nurse"
+            },
+            {
+              "name": "facing",
+              "type": "string",
+              "value": "down"
+            }
+          ]
         }
       ],
       "opacity": 1,
@@ -393,7 +439,7 @@
     }
   ],
   "nextlayerid": 3,
-  "nextobjectid": 4,
+  "nextobjectid": 6,
   "orientation": "orthogonal",
   "properties": [
     {

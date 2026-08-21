@@ -6,18 +6,24 @@
 //  numbers.
 // =========================================================================
 import { CONFIG } from '../config.js';
-import { SPECIES, STARTING_BAG } from '../data/monsters.js';
+import { SPECIES, HELD_ITEMS, STARTING_BAG, STARTING_HELD } from '../data/monsters.js';
+import { STATUS } from './status.js';
 import { makeMonster } from './monster.js';
 
-// v2 added `mapId` for the multi-area world. Older saves have no map and
-// are not upgradeable to a meaningful position, so they are discarded.
-const VERSION = 2;
+// v2 added `mapId` for the multi-area world.
+// v3 added status conditions, held items, money and beaten trainers.
+// Older saves are discarded rather than half-migrated.
+const VERSION = 3;
 
 export function newGameState() {
+  const starter = makeMonster('maaz', 5);
+  starter.held = STARTING_HELD;
   return {
     version: VERSION,
-    party: [makeMonster('maaz', 5)],
+    party: [starter],
     bag: { ...STARTING_BAG },
+    money: 500,
+    defeatedTrainers: [],
     mapId: null,        // null -> use the world's start map
     pos: null,          // null -> use that map's spawn point
     seen: [],           // species keys encountered (a mini pokédex)
@@ -31,9 +37,11 @@ function serialize(state) {
     version: VERSION,
     party: state.party.map((m) => ({
       speciesKey: m.speciesKey, level: m.level, xp: m.xp, hp: m.hp,
-      moves: m.moves,
+      moves: m.moves, status: m.status, held: m.held,
     })),
     bag: state.bag,
+    money: state.money,
+    defeatedTrainers: state.defeatedTrainers,
     mapId: state.mapId,
     pos: state.pos,
     seen: state.seen,
@@ -55,6 +63,9 @@ function deserialize(raw) {
       mon.xp = Math.max(0, p.xp | 0);
       mon.hp = Math.max(0, Math.min(mon.maxHp, p.hp ?? mon.maxHp));
       if (Array.isArray(p.moves) && p.moves.length) mon.moves = p.moves.slice(0, 4);
+      // Unknown conditions/items are dropped rather than trusted.
+      mon.status = p.status && STATUS[p.status] ? p.status : null;
+      mon.held = p.held && HELD_ITEMS[p.held] ? p.held : null;
       return mon;
     });
   if (!party.length) return null;
@@ -63,6 +74,8 @@ function deserialize(raw) {
     version: VERSION,
     party,
     bag: { ...STARTING_BAG, ...(data.bag || {}) },
+    money: Number.isFinite(data.money) ? data.money : 500,
+    defeatedTrainers: Array.isArray(data.defeatedTrainers) ? data.defeatedTrainers : [],
     mapId: typeof data.mapId === 'string' ? data.mapId : null,
     pos: data.pos ?? null,
     seen: Array.isArray(data.seen) ? data.seen : [],

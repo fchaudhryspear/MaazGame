@@ -234,6 +234,52 @@
               "value": "left"
             }
           ]
+        },
+        {
+          "id": 2,
+          "name": "cave_hiker",
+          "type": "npc",
+          "x": 96,
+          "y": 128,
+          "width": 32,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "npc",
+              "type": "string",
+              "value": "hiker"
+            },
+            {
+              "name": "facing",
+              "type": "string",
+              "value": "down"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "name": "dell",
+          "type": "trainer",
+          "x": 288,
+          "y": 160,
+          "width": 32,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "trainer",
+              "type": "string",
+              "value": "miner_dell"
+            },
+            {
+              "name": "facing",
+              "type": "string",
+              "value": "left"
+            }
+          ]
         }
       ],
       "opacity": 1,
@@ -243,7 +289,7 @@
     }
   ],
   "nextlayerid": 3,
-  "nextobjectid": 2,
+  "nextobjectid": 4,
   "orientation": "orthogonal",
   "properties": [
     {

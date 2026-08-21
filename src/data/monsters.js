@@ -59,6 +59,20 @@ export const MOVES = Object.freeze({
   gust:        { name: 'Gust',      type: 'flying',   power: 40, accuracy: 100, priority: 0 },
   wingbeat:    { name: 'Wingbeat',  type: 'flying',   power: 65, accuracy: 95,  priority: 0 },
 
+  // Condition moves: inflict a status rather than dealing damage.
+  emberflare:  { name: 'Ember Flare',type: 'fire',    power: 0,  accuracy: 85, priority: 0,
+                 inflict: 'burn' },
+  toxicspore:  { name: 'Toxic Spore',type: 'grass',   power: 0,  accuracy: 85, priority: 0,
+                 inflict: 'poison' },
+  staticshock: { name: 'Static',     type: 'electric',power: 0,  accuracy: 85, priority: 0,
+                 inflict: 'paralysis' },
+
+  // Damaging moves with a chance to inflict on hit.
+  scald:       { name: 'Scald',      type: 'water',   power: 55, accuracy: 100, priority: 0,
+                 inflictChance: { status: 'burn', chance: 0.3 } },
+  thunderfang: { name: 'Thundrfang',type: 'electric', power: 55, accuracy: 95,  priority: 0,
+                 inflictChance: { status: 'paralysis', chance: 0.3 } },
+
   // Status moves: no damage, they shift a stat stage instead.
   growl:       { name: 'Growl',     type: 'normal', power: 0, accuracy: 100, priority: 0,
                  effect: { stat: 'atk', stages: -1, target: 'foe' } },
@@ -75,28 +89,28 @@ export const SPECIES = Object.freeze({
     name: 'MAAZ', type: 'fire', color: 0xd23b3b,
     base: { hp: 26, atk: 12, def: 10, spd: 12 },
     moves: ['scratch', 'ember'],
-    learnset: { 7: 'quickatk', 12: 'flamebite', 16: 'bodyslam' },
+    learnset: { 7: 'quickatk', 12: 'flamebite', 14: 'emberflare', 16: 'bodyslam' },
     catchRate: 0.35, xpYield: 62,
   },
   aqua: {
     name: 'AQUABIT', type: 'water', color: 0x3d7bd6,
     base: { hp: 28, atk: 10, def: 12, spd: 10 },
     moves: ['tackle', 'watergun'],
-    learnset: { 8: 'aquajet', 14: 'surge', 18: 'harden' },
+    learnset: { 8: 'aquajet', 12: 'scald', 14: 'surge', 18: 'harden' },
     catchRate: 0.5, xpYield: 58,
   },
   leaflet: {
     name: 'LEAFLET', type: 'grass', color: 0x3fa34d,
     base: { hp: 30, atk: 10, def: 11, spd: 9 },
     moves: ['scratch', 'vinewhip'],
-    learnset: { 8: 'growl', 14: 'leafblade', 18: 'bodyslam' },
+    learnset: { 8: 'growl', 12: 'toxicspore', 14: 'leafblade', 18: 'bodyslam' },
     catchRate: 0.5, xpYield: 58,
   },
   zapmo: {
     name: 'ZAPMO', type: 'electric', color: 0xe6c62e,
     base: { hp: 22, atk: 11, def: 9, spd: 15 },
     moves: ['tackle', 'spark'],
-    learnset: { 9: 'quickatk', 15: 'thunderjolt', 19: 'agility' },
+    learnset: { 9: 'quickatk', 12: 'staticshock', 15: 'thunderjolt', 19: 'agility' },
     catchRate: 0.45, xpYield: 60,
   },
   birbo: {
@@ -126,15 +140,34 @@ export const SPECIES = Object.freeze({
 export const WILD_POOL = ['aqua', 'leaflet', 'zapmo', 'birbo', 'emberling', 'pebbo'];
 export const WILD_LEVELS = { min: 2, max: 6 };
 
+// Held items. One per monster, applied passively during battle.
+//   typeBoost  — multiplies damage of moves of that type
+//   pinchHeal  — restores HP once when the holder drops below `threshold`
+//   quickClaw  — chance to act first regardless of speed
+//   statusGuard— blocks a condition from being inflicted
+export const HELD_ITEMS = Object.freeze({
+  charcoal:    { name: 'Charcoal',    kind: 'typeBoost', type: 'fire',     multiplier: 1.2 },
+  mysticwater: { name: 'Mystic Water',kind: 'typeBoost', type: 'water',    multiplier: 1.2 },
+  miracleseed: { name: 'Miracle Seed',kind: 'typeBoost', type: 'grass',    multiplier: 1.2 },
+  magnet:      { name: 'Magnet',      kind: 'typeBoost', type: 'electric', multiplier: 1.2 },
+  oranberry:   { name: 'Oran Berry',  kind: 'pinchHeal', threshold: 0.25, amount: 20 },
+  quickclaw:   { name: 'Quick Claw',  kind: 'quickClaw', chance: 0.2 },
+  burnguard:   { name: 'Burn Guard',  kind: 'statusGuard', blocks: 'burn' },
+});
+
 // Bag items. `use` describes what happens; the battle scene interprets it.
 export const ITEMS = Object.freeze({
   potion:      { name: 'Potion',      kind: 'heal',  amount: 20 },
   superpotion: { name: 'Super Potion',kind: 'heal',  amount: 50 },
+  antidote:    { name: 'Antidote',    kind: 'cure' },
   ball:        { name: 'Maaz Ball',   kind: 'ball',  bonus: 1.0 },
   greatball:   { name: 'Great Ball',  kind: 'ball',  bonus: 1.5 },
 });
 
 // What the player starts a fresh game with.
 export const STARTING_BAG = Object.freeze({
-  potion: 3, superpotion: 1, ball: 5, greatball: 1,
+  potion: 3, superpotion: 1, antidote: 2, ball: 5, greatball: 1,
 });
+
+// What the starter is holding on a fresh game.
+export const STARTING_HELD = 'oranberry';

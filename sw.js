@@ -9,7 +9,7 @@
  *
  * Bump CACHE_VERSION whenever the shell changes to retire old caches.
  */
-const CACHE_VERSION = 'maazgame-v4';
+const CACHE_VERSION = 'maazgame-v5';
 
 // Relative paths so the PWA works under a subpath (e.g. GitHub Pages
 // project sites like user.github.io/MaazGame/).
@@ -28,15 +28,19 @@ const SHELL_ASSETS = [
   './src/config.js',
   './src/assets.js',
   './src/data/monsters.js',
+  './src/data/trainers.js',
   './src/entities/collision.js',
   './src/entities/player.js',
+  './src/entities/npc.js',
   './src/systems/maploader.js',
   './src/systems/monster.js',
+  './src/systems/status.js',
   './src/systems/encounters.js',
   './src/systems/save.js',
   './src/systems/audio.js',
   './src/ui/widgets.js',
   './src/ui/touch.js',
+  './src/ui/dialogue.js',
   './src/scenes/WorldScene.js',
   './src/scenes/BattleScene.js',
 

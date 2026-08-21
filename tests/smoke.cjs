@@ -6,7 +6,7 @@
 //
 //  Usage:
 //    npm install playwright        (once)
-//    node tests/smoke.js
+//    node tests/smoke.cjs
 //
 //  Env: PORT, CHROMIUM (path to a browser binary), SHOT_DIR (screenshot dir).
 // =========================================================================
@@ -332,6 +332,164 @@ const log = (...a) => console.log(...a);
     });
     check('heal tile restores party', world.healed);
     check('sign readable via interact', world.toastVisible);
+
+    log('\n[10] NPCs + DIALOGUE');
+    const npcRes = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      await w.warpTo('town', 8, 7, 'up');            // stand below the town kid
+      await new Promise(r => setTimeout(r, 400));
+      const out = {
+        count: w.npcs.length,
+        blocked: w.npcs.every(n => w.matrix.isBlocked(n.col, n.row)),
+      };
+      w.interact();
+      await new Promise(r => setTimeout(r, 300));
+      out.opened = w.dialogue.open;
+      out.firstLine = w.dialogue.text.text;
+      for (let i = 0; i < 6; i++) {
+        w.input.emit('pointerdown');
+        await new Promise(r => setTimeout(r, 140));
+      }
+      out.closed = !w.dialogue.open && !w.busy;
+      return out;
+    });
+    check('NPCs spawned and block their tile', npcRes.count === 2 && npcRes.blocked);
+    check('talking opens a dialogue box', npcRes.opened, JSON.stringify(npcRes.firstLine));
+    check('paging closes it and frees input', npcRes.closed);
+
+    log('\n[11] TRAINER SIGHT + TEAM BATTLE');
+    const sight = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      await w.warpTo('route1', 8, 9, 'up');
+      await new Promise(r => setTimeout(r, 400));
+      const t = w.npcs.find(n => n.kind === 'trainer');
+      return {
+        tiles: t.sightTiles(w.matrix).length,
+        sees: t.sees(8, 8, w.matrix),
+        blindSpot: t.sees(1, 1, w.matrix),
+      };
+    });
+    check('trainer watches a line of tiles', sight.tiles > 0, `${sight.tiles} tiles`);
+    check('sees the player in its line', sight.sees && !sight.blindSpot);
+
+    const trainerBattle = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      const t = w.npcs.find(n => n.kind === 'trainer');
+      w.busy = false; w.encounterActive = false;
+      w.startTrainerBattle(t);
+      await new Promise(r => setTimeout(r, 900));
+      const b = window.game.scene.getScene('BattleScene');
+      const tapper = setInterval(() => b.input.emit('pointerdown'), 50);
+
+      const ballsBefore = w.state.bag.ball;
+      await b.tryRun();
+      const fled = !b.scene.isActive();
+      await b.useItem('ball');
+      const ballsAfter = w.state.bag.ball;
+
+      // Overpower the player so the whole enemy team is cleared.
+      b.playerMon.level = 30; b.playerMon.atk = 250;
+      b.playerMon.maxHp = 400; b.playerMon.hp = 400;
+      const faced = new Set();
+      const t0 = Date.now();
+      while (Date.now() - t0 < 25000 && b.scene.isActive()) {
+        faced.add(b.enemyMon.name);
+        if (!b.busy) b.takeTurn({ kind: 'move', move: b.playerMon.moves[0] });
+        await new Promise(r => setTimeout(r, 120));
+      }
+      clearInterval(tapper);
+      return {
+        isTrainer: true, fled, ballsBefore, ballsAfter,
+        faced: [...faced], ended: !b.scene.isActive(),
+        defeated: w.state.defeatedTrainers.slice(), money: w.state.money,
+      };
+    });
+    check('cannot flee a trainer battle', !trainerBattle.fled);
+    check('cannot catch a trainer monster', trainerBattle.ballsAfter === trainerBattle.ballsBefore);
+    check('fights the trainer\'s whole team', trainerBattle.faced.length >= 2,
+      trainerBattle.faced.join(' then '));
+    check('trainer recorded as defeated', trainerBattle.defeated.length >= 1,
+      trainerBattle.defeated.join(','));
+    check('prize money awarded', trainerBattle.money > 500, String(trainerBattle.money));
+
+    log('\n[12] STATUS CONDITIONS + HELD ITEMS');
+    const statusRes = await page.evaluate(async () => {
+      const mod = await import('/src/systems/monster.js');
+      const st = await import('/src/systems/status.js');
+      const out = {};
+
+      // Burn halves attack and chips HP; fire types are immune.
+      const target = mod.makeMonster('aqua', 10);
+      const atkBefore = mod.effectiveStat(target, 'atk', null);
+      st.inflictStatus(target, 'burn');
+      out.atkHalved = mod.effectiveStat(target, 'atk', null) < atkBefore;
+      out.tick = st.statusTick(target).damage;
+      out.fireImmune = st.inflictStatus(mod.makeMonster('maaz', 10), 'burn').reason === 'immune';
+
+      // Paralysis slows and sometimes skips.
+      const par = mod.makeMonster('birbo', 10);
+      const spdBefore = mod.effectiveStat(par, 'spd', null);
+      st.inflictStatus(par, 'paralysis');
+      out.spdCut = mod.effectiveStat(par, 'spd', null) < spdBefore;
+      let skips = 0;
+      for (let i = 0; i < 2000; i++) if (st.rollStatusSkip(par).skipped) skips++;
+      out.skipRate = skips / 2000;
+
+      // Healing clears conditions.
+      mod.healMonster(par);
+      out.healClears = par.status === null;
+
+      // Held items: type boost, pinch berry, status guard.
+      const boosted = mod.makeMonster('maaz', 10); boosted.held = 'charcoal';
+      out.boost = mod.heldTypeBoost(boosted, 'fire');
+      out.boostWrongType = mod.heldTypeBoost(boosted, 'water');
+      const berry = mod.makeMonster('aqua', 10); berry.held = 'oranberry'; berry.hp = 4;
+      const pinch = mod.tryPinchHeal(berry);
+      out.berryFired = !!pinch && berry.held === null;
+      out.berryIdleAtFullHp = mod.tryPinchHeal(mod.makeMonster('aqua', 10)) === null;
+      const guard = mod.makeMonster('aqua', 10); guard.held = 'burnguard';
+      out.guards = mod.heldBlocksStatus(guard, 'burn') && !mod.heldBlocksStatus(guard, 'poison');
+      return out;
+    });
+    check('burn halves attack and ticks HP', statusRes.atkHalved && statusRes.tick > 0,
+      `tick ${statusRes.tick}`);
+    check('type immunity respected (fire cannot burn)', statusRes.fireImmune);
+    check('paralysis cuts speed and skips turns', statusRes.spdCut && statusRes.skipRate > 0.15,
+      `${(statusRes.skipRate * 100).toFixed(0)}% skips`);
+    check('healing clears conditions', statusRes.healClears);
+    check('held type boost applies to matching type only',
+      statusRes.boost > 1 && statusRes.boostWrongType === 1, `x${statusRes.boost}`);
+    check('pinch berry fires low and is consumed',
+      statusRes.berryFired && statusRes.berryIdleAtFullHp);
+    check('status guard blocks only its condition', statusRes.guards);
+
+    log('\n[13] SAVE v3 ROUND TRIP');
+    await page.waitForFunction(() => {
+      const w = window.game.scene.getScene('WorldScene');
+      return !w.scene.isPaused() && !w.encounterActive;
+    }, { timeout: 10000 });
+    await page.evaluate(() => {
+      const w = window.game.scene.getScene('WorldScene');
+      w.state.party[0].status = 'poison';
+      w.persist();
+    });
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => window.game?.scene?.getScene('WorldScene')?.ready, { timeout: 15000 });
+    const v3 = await page.evaluate(() => {
+      const w = window.game.scene.getScene('WorldScene');
+      return {
+        version: JSON.parse(localStorage.getItem('maazgame.save.v1')).version,
+        status: w.state.party[0].status,
+        held: w.state.party[0].held,
+        defeated: w.state.defeatedTrainers.length,
+        money: w.state.money,
+      };
+    });
+    check('save format is v3', v3.version === 3);
+    check('condition survives a reload', v3.status === 'poison');
+    check('held item survives a reload', v3.held === 'oranberry');
+    check('beaten trainers survive a reload', v3.defeated >= 1);
+    check('money survives a reload', v3.money > 500, String(v3.money));
 
     await page.screenshot({ path: OUT + '/new_world.png' });
     await page.evaluate(() => window.game.scene.getScene('WorldScene').openMenu());

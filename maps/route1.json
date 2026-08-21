@@ -405,6 +405,52 @@
               "value": "ROUTE 1\nTall grass ahead.\nWild monsters live there!"
             }
           ]
+        },
+        {
+          "id": 4,
+          "name": "joey",
+          "type": "trainer",
+          "x": 256,
+          "y": 192,
+          "width": 32,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "trainer",
+              "type": "string",
+              "value": "youngster_joey"
+            },
+            {
+              "name": "facing",
+              "type": "string",
+              "value": "down"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "name": "rae",
+          "type": "trainer",
+          "x": 448,
+          "y": 256,
+          "width": 32,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "trainer",
+              "type": "string",
+              "value": "camper_rae"
+            },
+            {
+              "name": "facing",
+              "type": "string",
+              "value": "up"
+            }
+          ]
         }
       ],
       "opacity": 1,
@@ -414,7 +460,7 @@
     }
   ],
   "nextlayerid": 3,
-  "nextobjectid": 4,
+  "nextobjectid": 6,
   "orientation": "orthogonal",
   "properties": [
     {
