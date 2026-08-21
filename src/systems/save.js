@@ -12,8 +12,9 @@ import { makeMonster } from './monster.js';
 
 // v2 added `mapId` for the multi-area world.
 // v3 added status conditions, held items, money and beaten trainers.
+// v4 added the player's name, nicknames, shop stock and the champion flag.
 // Older saves are discarded rather than half-migrated.
-const VERSION = 3;
+const VERSION = 4;
 
 export function newGameState() {
   const starter = makeMonster('maaz', 5);
@@ -22,8 +23,12 @@ export function newGameState() {
     version: VERSION,
     party: [starter],
     bag: { ...STARTING_BAG },
+    playerName: 'MAAZ',
     money: 500,
+    heldStock: {},        // held items bought but not yet equipped
     defeatedTrainers: [],
+    gifts: [],            // one-off scripted gifts already received
+    championBeaten: false,
     mapId: null,        // null -> use the world's start map
     pos: null,          // null -> use that map's spawn point
     seen: [],           // species keys encountered (a mini pokédex)
@@ -37,11 +42,15 @@ function serialize(state) {
     version: VERSION,
     party: state.party.map((m) => ({
       speciesKey: m.speciesKey, level: m.level, xp: m.xp, hp: m.hp,
-      moves: m.moves, status: m.status, held: m.held,
+      moves: m.moves, status: m.status, held: m.held, nickname: m.nickname,
     })),
     bag: state.bag,
+    playerName: state.playerName,
     money: state.money,
+    heldStock: state.heldStock,
     defeatedTrainers: state.defeatedTrainers,
+    gifts: state.gifts,
+    championBeaten: state.championBeaten,
     mapId: state.mapId,
     pos: state.pos,
     seen: state.seen,
@@ -66,6 +75,10 @@ function deserialize(raw) {
       // Unknown conditions/items are dropped rather than trusted.
       mon.status = p.status && STATUS[p.status] ? p.status : null;
       mon.held = p.held && HELD_ITEMS[p.held] ? p.held : null;
+      if (typeof p.nickname === 'string' && p.nickname.trim()) {
+        mon.nickname = p.nickname.trim().slice(0, 10);
+        mon.name = mon.nickname;
+      }
       return mon;
     });
   if (!party.length) return null;
@@ -74,8 +87,13 @@ function deserialize(raw) {
     version: VERSION,
     party,
     bag: { ...STARTING_BAG, ...(data.bag || {}) },
+    playerName: typeof data.playerName === 'string' && data.playerName.trim()
+      ? data.playerName.trim().slice(0, 10) : 'MAAZ',
     money: Number.isFinite(data.money) ? data.money : 500,
+    heldStock: (data.heldStock && typeof data.heldStock === 'object') ? data.heldStock : {},
     defeatedTrainers: Array.isArray(data.defeatedTrainers) ? data.defeatedTrainers : [],
+    gifts: Array.isArray(data.gifts) ? data.gifts : [],
+    championBeaten: data.championBeaten === true,
     mapId: typeof data.mapId === 'string' ? data.mapId : null,
     pos: data.pos ?? null,
     seen: Array.isArray(data.seen) ? data.seen : [],

@@ -9,7 +9,7 @@
  *
  * Bump CACHE_VERSION whenever the shell changes to retire old caches.
  */
-const CACHE_VERSION = 'maazgame-v5';
+const CACHE_VERSION = 'maazgame-v6';
 
 // Relative paths so the PWA works under a subpath (e.g. GitHub Pages
 // project sites like user.github.io/MaazGame/).
@@ -41,8 +41,12 @@ const SHELL_ASSETS = [
   './src/ui/widgets.js',
   './src/ui/touch.js',
   './src/ui/dialogue.js',
+  './src/ui/shop.js',
+  './src/ui/prompt.js',
+  './src/scenes/TitleScene.js',
   './src/scenes/WorldScene.js',
   './src/scenes/BattleScene.js',
+  './src/scenes/EndingScene.js',
 
   // Tiled map data. Precached so the world is fully explorable offline —
   // warping to an uncached area would otherwise fail with no network.
@@ -51,6 +55,7 @@ const SHELL_ASSETS = [
   './maps/town.json',
   './maps/route1.json',
   './maps/cave.json',
+  './maps/hall.json',
 ];
 
 self.addEventListener('install', (event) => {

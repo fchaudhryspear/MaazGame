@@ -91,6 +91,14 @@ export const SPECIES = Object.freeze({
     moves: ['scratch', 'ember'],
     learnset: { 7: 'quickatk', 12: 'flamebite', 14: 'emberflare', 16: 'bodyslam' },
     catchRate: 0.35, xpYield: 62,
+    evolvesTo: 'maazflare', evolvesAt: 16,
+  },
+  maazflare: {
+    name: 'MAAZFLARE', type: 'fire', color: 0xff6b35,
+    base: { hp: 40, atk: 20, def: 16, spd: 19 },
+    moves: ['flamebite', 'quickatk'],
+    learnset: { 22: 'emberflare', 28: 'bodyslam' },
+    catchRate: 0.2, xpYield: 158,
   },
   aqua: {
     name: 'AQUABIT', type: 'water', color: 0x3d7bd6,
@@ -98,6 +106,14 @@ export const SPECIES = Object.freeze({
     moves: ['tackle', 'watergun'],
     learnset: { 8: 'aquajet', 12: 'scald', 14: 'surge', 18: 'harden' },
     catchRate: 0.5, xpYield: 58,
+    evolvesTo: 'aquadon', evolvesAt: 18,
+  },
+  aquadon: {
+    name: 'AQUADON', type: 'water', color: 0x2a5fb0,
+    base: { hp: 44, atk: 17, def: 20, spd: 15 },
+    moves: ['surge', 'aquajet'],
+    learnset: { 24: 'scald', 30: 'bodyslam' },
+    catchRate: 0.2, xpYield: 155,
   },
   leaflet: {
     name: 'LEAFLET', type: 'grass', color: 0x3fa34d,
@@ -105,6 +121,14 @@ export const SPECIES = Object.freeze({
     moves: ['scratch', 'vinewhip'],
     learnset: { 8: 'growl', 12: 'toxicspore', 14: 'leafblade', 18: 'bodyslam' },
     catchRate: 0.5, xpYield: 58,
+    evolvesTo: 'leafgore', evolvesAt: 18,
+  },
+  leafgore: {
+    name: 'LEAFGORE', type: 'grass', color: 0x1f7a35,
+    base: { hp: 46, atk: 17, def: 19, spd: 13 },
+    moves: ['leafblade', 'toxicspore'],
+    learnset: { 24: 'bodyslam', 30: 'harden' },
+    catchRate: 0.2, xpYield: 155,
   },
   zapmo: {
     name: 'ZAPMO', type: 'electric', color: 0xe6c62e,
@@ -127,6 +151,33 @@ export const SPECIES = Object.freeze({
     learnset: { 10: 'flamebite', 16: 'bodyslam' },
     catchRate: 0.4, xpYield: 61,
   },
+  lamblet: {
+    shape: 'sheep',
+    name: 'LAMBLET', type: 'normal', color: 0xf2ead9,
+    base: { hp: 30, atk: 9, def: 12, spd: 8 },
+    moves: ['tackle', 'growl'],
+    learnset: { 8: 'bodyslam', 12: 'harden', 16: 'staticshock' },
+    catchRate: 0.55, xpYield: 58,
+    evolvesTo: 'woolie', evolvesAt: 12,
+  },
+  woolie: {
+    shape: 'sheep',
+    name: 'WOOLIE', type: 'normal', color: 0xe8dcc0,
+    base: { hp: 38, atk: 13, def: 16, spd: 10 },
+    moves: ['tackle', 'bodyslam'],
+    learnset: { 18: 'staticshock', 22: 'thunderfang' },
+    catchRate: 0.35, xpYield: 92,
+    evolvesTo: 'rambolt', evolvesAt: 24,
+  },
+  rambolt: {
+    shape: 'sheep',
+    name: 'RAMBOLT', type: 'electric', color: 0xf5d76e,
+    base: { hp: 46, atk: 18, def: 19, spd: 14 },
+    moves: ['bodyslam', 'thunderjolt'],
+    learnset: { 28: 'thunderfang', 32: 'agility' },
+    catchRate: 0.2, xpYield: 150,
+  },
+
   pebbo: {
     name: 'PEBBO', type: 'normal', color: 0x9a8f7a,
     base: { hp: 34, atk: 11, def: 15, spd: 6 },
@@ -137,7 +188,7 @@ export const SPECIES = Object.freeze({
 });
 
 // What appears in tall grass, and at what levels.
-export const WILD_POOL = ['aqua', 'leaflet', 'zapmo', 'birbo', 'emberling', 'pebbo'];
+export const WILD_POOL = ['aqua', 'leaflet', 'zapmo', 'birbo', 'emberling', 'pebbo', 'lamblet'];
 export const WILD_LEVELS = { min: 2, max: 6 };
 
 // Held items. One per monster, applied passively during battle.
@@ -163,6 +214,19 @@ export const ITEMS = Object.freeze({
   ball:        { name: 'Maaz Ball',   kind: 'ball',  bonus: 1.0 },
   greatball:   { name: 'Great Ball',  kind: 'ball',  bonus: 1.5 },
 });
+
+// Shop stock. Held items are sold too, so prize money has somewhere to go.
+export const SHOP_STOCK = Object.freeze([
+  { key: 'potion',      price: 200,  kind: 'bag' },
+  { key: 'superpotion', price: 450,  kind: 'bag' },
+  { key: 'antidote',    price: 150,  kind: 'bag' },
+  { key: 'ball',        price: 180,  kind: 'bag' },
+  { key: 'greatball',   price: 500,  kind: 'bag' },
+  { key: 'oranberry',   price: 300,  kind: 'held' },
+  { key: 'charcoal',    price: 700,  kind: 'held' },
+  { key: 'magnet',      price: 700,  kind: 'held' },
+  { key: 'quickclaw',   price: 900,  kind: 'held' },
+]);
 
 // What the player starts a fresh game with.
 export const STARTING_BAG = Object.freeze({

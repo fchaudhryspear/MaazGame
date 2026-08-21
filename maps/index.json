@@ -23,6 +23,12 @@
       "displayName": "MAAZ CAVE",
       "width": 15,
       "height": 12
+    },
+    "hall": {
+      "file": "hall.json",
+      "displayName": "CHAMPION'S HALL",
+      "width": 13,
+      "height": 12
     }
   }
 }

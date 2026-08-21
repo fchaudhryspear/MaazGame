@@ -18,6 +18,30 @@ const OUT = process.env.SHOT_DIR || require('os').tmpdir();
 
 const log = (...a) => console.log(...a);
 
+
+// The game now opens on the title screen, so every boot goes through it:
+// continue an existing save, or start a new game and accept the default names.
+async function bootToWorld(page) {
+  await page.waitForFunction(
+    () => window.game?.scene?.getScene('TitleScene')?.ready, { timeout: 15000 });
+  await page.evaluate(async () => {
+    const t = window.game.scene.getScene('TitleScene');
+    if (window.localStorage.getItem('maazgame.save.v1')) { t._continue(); return; }
+    t._newGame(false);
+    // Two prompts: trainer name, then starter nickname. Accept the defaults.
+    for (let i = 0; i < 2; i++) {
+      const t0 = Date.now();
+      while (!t.prompt.resolve && Date.now() - t0 < 3000) {
+        await new Promise(r => setTimeout(r, 60));
+      }
+      if (t.prompt.resolve) t.prompt._finish('');
+      await new Promise(r => setTimeout(r, 200));
+    }
+  });
+  await page.waitForFunction(
+    () => window.game?.scene?.getScene('WorldScene')?.ready, { timeout: 15000 });
+}
+
 (async () => {
   const server = spawn('python3', ['-m', 'http.server', String(PORT)], { cwd: ROOT, stdio: 'ignore' });
   await new Promise(r => setTimeout(r, 900));
@@ -37,22 +61,24 @@ const log = (...a) => console.log(...a);
 
   try {
     await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
-    await page.waitForFunction(() => window.game?.scene?.getScene('WorldScene')?.ready, { timeout: 15000 });
+    await bootToWorld(page);
     log('\n[1] BOOT');
     const boot = await page.evaluate(() => {
       const w = window.game.scene.getScene('WorldScene');
       return { party: w.state.party.length, lead: w.state.party[0].name, lvl: w.state.party[0].level,
                bag: w.state.bag, rows: w.matrix.blocked.length, cols: w.matrix.blocked[0].length,
                spawnBlocked: w.matrix.isBlocked(w.player.col, w.player.row),
+               money: w.state.money, name: w.state.playerName,
                mapName: w.map.name, mapTitle: w.map.displayName,
                areas: Object.keys(w.mapIndex.maps) };
     });
     check('started in town', boot.mapName === 'town', `${boot.mapTitle}`);
-    check('all areas indexed', boot.areas.length === 3, boot.areas.join(', '));
+    check('all areas indexed', boot.areas.length === 4, boot.areas.join(', '));
     check('world + party ready', boot.party === 1 && boot.lead === 'MAAZ', `${boot.lead} Lv${boot.lvl}`);
     check('collision matrix built', boot.rows === 15 && boot.cols === 20, `${boot.cols}x${boot.rows}`);
     check('spawn walkable', !boot.spawnBlocked);
     check('starting bag', boot.bag.ball === 5 && boot.bag.potion === 3, JSON.stringify(boot.bag));
+    check('starting money', boot.money === 500, String(boot.money));
 
     log('\n[2] MOVEMENT + COLLISION');
     const mv = await page.evaluate(async () => {
@@ -212,6 +238,12 @@ const log = (...a) => console.log(...a);
       const partyBefore = w.state.party.length;
       const ballsBefore = w.state.bag.greatball;
       const tapper = setInterval(() => b.input.emit('pointerdown'), 50);
+      // A successful catch opens the nickname keyboard mid-sequence, so this
+      // has to be answered by a watcher rather than after the throw loop.
+      let asked = false;
+      const nickWatch = setInterval(() => {
+        if (b.prompt.resolve) { asked = true; b.prompt._finish('MAAZPET'); }
+      }, 80);
 
       // Real RNG, weakened target: retry until it sticks. (Stubbing
       // Math.random globally would break Phaser's UUID generation.)
@@ -225,15 +257,22 @@ const log = (...a) => console.log(...a);
       const t0 = Date.now();
       while (Date.now() - t0 < 8000 && b.scene.isActive()) await new Promise(r => setTimeout(r, 100));
       clearInterval(tapper);
+      clearInterval(nickWatch);
+      const last = w.state.party[w.state.party.length - 1];
       return { partyBefore, partyAfter: w.state.party.length,
                ballsBefore, ballsAfter: w.state.bag.greatball,
-               caught: w.state.caught.length, attempts };
+               caught: w.state.caught.length, attempts,
+               asked, caughtName: last.name, caughtNick: last.nickname };
     });
     check('ball consumed', catchRes.ballsAfter < catchRes.ballsBefore,
       `${catchRes.ballsBefore} -> ${catchRes.ballsAfter} (${catchRes.attempts} throw(s))`);
     check('monster joined party', catchRes.partyAfter === catchRes.partyBefore + 1,
       `party ${catchRes.partyBefore} -> ${catchRes.partyAfter}`);
     check('pokedex caught entry', catchRes.caught >= 1);
+    check('catch offers a nickname', catchRes.asked === true);
+    check('nickname applied to caught monster',
+      catchRes.caughtNick === 'MAAZPET' && catchRes.caughtName === 'MAAZPET',
+      `${catchRes.caughtName} / ${catchRes.caughtNick}`);
 
     await page.waitForFunction(() => {
       const w = window.game.scene.getScene('WorldScene');
@@ -291,7 +330,7 @@ const log = (...a) => console.log(...a);
 
     // Reload the page and confirm the save is restored
     await page.reload({ waitUntil: 'load' });
-    await page.waitForFunction(() => window.game?.scene?.getScene('WorldScene')?.ready, { timeout: 15000 });
+    await bootToWorld(page);
     const loaded = await page.evaluate(() => {
       const w = window.game.scene.getScene('WorldScene');
       return { party: w.state.party.length, names: w.state.party.map(m=>m.name),
@@ -353,7 +392,8 @@ const log = (...a) => console.log(...a);
       out.closed = !w.dialogue.open && !w.busy;
       return out;
     });
-    check('NPCs spawned and block their tile', npcRes.count === 2 && npcRes.blocked);
+    check('NPCs spawned in town', npcRes.count >= 4, `${npcRes.count} people`);
+    check('every NPC blocks their tile', npcRes.blocked);
     check('talking opens a dialogue box', npcRes.opened, JSON.stringify(npcRes.firstLine));
     check('paging closes it and frees input', npcRes.closed);
 
@@ -463,7 +503,7 @@ const log = (...a) => console.log(...a);
       statusRes.berryFired && statusRes.berryIdleAtFullHp);
     check('status guard blocks only its condition', statusRes.guards);
 
-    log('\n[13] SAVE v3 ROUND TRIP');
+    log('\n[13] SAVE ROUND TRIP');
     await page.waitForFunction(() => {
       const w = window.game.scene.getScene('WorldScene');
       return !w.scene.isPaused() && !w.encounterActive;
@@ -474,7 +514,7 @@ const log = (...a) => console.log(...a);
       w.persist();
     });
     await page.reload({ waitUntil: 'load' });
-    await page.waitForFunction(() => window.game?.scene?.getScene('WorldScene')?.ready, { timeout: 15000 });
+    await bootToWorld(page);
     const v3 = await page.evaluate(() => {
       const w = window.game.scene.getScene('WorldScene');
       return {
@@ -485,11 +525,203 @@ const log = (...a) => console.log(...a);
         money: w.state.money,
       };
     });
-    check('save format is v3', v3.version === 3);
+    check('save format is current', v3.version === 4, `v${v3.version}`);
     check('condition survives a reload', v3.status === 'poison');
     check('held item survives a reload', v3.held === 'oranberry');
     check('beaten trainers survive a reload', v3.defeated >= 1);
     check('money survives a reload', v3.money > 500, String(v3.money));
+
+    log('\n[14] TITLE, NAMING + SHEEP GIFT');
+    const intro = await page.evaluate(() => {
+      const w = window.game.scene.getScene('WorldScene');
+      return { name: w.state.playerName, starter: w.state.party[0].speciesKey };
+    });
+    check('player name recorded', !!intro.name, intro.name);
+
+    const gift = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      w.busy = false;
+      await w.warpTo('town', 14, 8, 'right');    // beside the ranch hand
+      await new Promise(r => setTimeout(r, 400));
+      const before = w.state.party.length;
+      w.interact();
+      await new Promise(r => setTimeout(r, 350));
+      for (let i = 0; i < 6; i++) {
+        w.input.emit('pointerdown');
+        await new Promise(r => setTimeout(r, 150));
+      }
+      if (w.prompt.resolve) w.prompt._finish('WOOLY');
+      await new Promise(r => setTimeout(r, 300));
+      const mon = w.state.party[w.state.party.length - 1];
+      // Talking again must not hand over a second sheep.
+      w.busy = false;
+      w.interact();
+      await new Promise(r => setTimeout(r, 300));
+      for (let i = 0; i < 4; i++) {
+        w.input.emit('pointerdown');
+        await new Promise(r => setTimeout(r, 140));
+      }
+      return { before, after: w.state.party.length,
+               species: mon.speciesKey, nick: mon.nickname,
+               afterSecondTalk: w.state.party.length };
+    });
+    check('ranch hand gifts a sheep', gift.species === 'lamblet' && gift.after === gift.before + 1,
+      `LAMBLET nicknamed ${gift.nick}`);
+    check('gift is one-off', gift.afterSecondTalk === gift.after);
+
+    log('\n[15] SHOP');
+    const shop = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      w.busy = false;
+      w.state.money = 2000;
+      await w.warpTo('town', 12, 7, 'up');       // below the shopkeeper
+      await new Promise(r => setTimeout(r, 400));
+      w.interact();
+      await new Promise(r => setTimeout(r, 350));
+      for (let i = 0; i < 3; i++) {
+        w.input.emit('pointerdown');
+        await new Promise(r => setTimeout(r, 160));
+      }
+      const opened = !!w.shop.resolve;
+      const potions = w.state.bag.potion, money = w.state.money;
+      w.shop._buy({ key: 'potion', price: 200, kind: 'bag' });
+      w.shop._buy({ key: 'charcoal', price: 700, kind: 'held' });
+      // Cannot buy what you cannot afford.
+      w.state.money = 10;
+      w.shop._buy({ key: 'greatball', price: 500, kind: 'bag' });
+      const out = { opened, potions, potionsAfter: w.state.bag.potion,
+                    money, moneyAfter: w.state.money,
+                    held: w.state.heldStock.charcoal,
+                    overspent: w.state.money < 0 };
+      w.shop._close();
+      w._endConversation();
+      return out;
+    });
+    check('shop opens from the shopkeeper', shop.opened);
+    check('purchase adds stock and deducts money',
+      shop.potionsAfter === shop.potions + 1 && shop.held === 1);
+    check('cannot overspend', !shop.overspent, `${shop.moneyAfter} coins left`);
+
+    log('\n[16] EVOLUTION');
+    const evo = await page.evaluate(async () => {
+      const mod = await import('/src/systems/monster.js');
+      const out = {};
+      const sheep = mod.makeMonster('lamblet', 11);
+      out.notYet = mod.pendingEvolution(sheep) === null;
+      sheep.level = 12;
+      const maxBefore = sheep.maxHp;
+      const r = mod.evolveMonster(sheep);
+      out.evolved = r && r.toName === 'WOOLIE';
+      out.statsGrew = sheep.maxHp > maxBefore;
+      out.typeCarried = sheep.speciesKey === 'woolie';
+      // A nickname survives evolution; an un-nicknamed monster takes the new name.
+      const named = mod.makeMonster('lamblet', 12);
+      mod.setNickname(named, 'Maazu');
+      mod.evolveMonster(named);
+      out.keepsNickname = named.name === 'Maazu' && named.speciesKey === 'woolie';
+      const plain = mod.makeMonster('lamblet', 12);
+      mod.evolveMonster(plain);
+      out.takesNewName = plain.name === 'WOOLIE';
+      // Full line ends at RAMBOLT.
+      sheep.level = 24;
+      mod.evolveMonster(sheep);
+      out.finalStage = sheep.speciesKey === 'rambolt' && mod.pendingEvolution(sheep) === null;
+      return out;
+    });
+    check('does not evolve early', evo.notYet);
+    check('evolves at the right level with bigger stats', evo.evolved && evo.statsGrew);
+    check('nickname survives evolution', evo.keepsNickname && evo.takesNewName);
+    check('line ends at its final stage', evo.finalStage);
+
+    log('\n[17] CHAMPION GATE + ENDING');
+    const champ = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      w.busy = false; w.encounterActive = false;
+      w.state.defeatedTrainers = [];
+      await w.warpTo('hall', 6, 4, 'up');
+      await new Promise(r => setTimeout(r, 500));
+      w.busy = false;
+      w.interact();
+      await new Promise(r => setTimeout(r, 350));
+      const lockedText = w.dialogue.text.text;
+      const lockedBattle = w.encounterActive;
+      for (let i = 0; i < 6; i++) {
+        w.input.emit('pointerdown');
+        await new Promise(r => setTimeout(r, 140));
+      }
+      return { lockedText, lockedBattle };
+    });
+    check('champion is locked until the road trainers are beaten',
+      !champ.lockedBattle && /CHAMPION/.test(champ.lockedText || ''));
+
+    const fight = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      w.busy = false; w.encounterActive = false;
+      w.state.defeatedTrainers = ['route1:joey', 'route1:rae', 'cave:dell'];
+      w.interact();
+      await new Promise(r => setTimeout(r, 350));
+      for (let i = 0; i < 8; i++) {
+        w.input.emit('pointerdown');
+        await new Promise(r => setTimeout(r, 140));
+      }
+      await new Promise(r => setTimeout(r, 900));
+      const b = window.game.scene.getScene('BattleScene');
+      if (!b || !b.scene.isActive()) return { started: false };
+
+      const tapper = setInterval(() => b.input.emit('pointerdown'), 50);
+      b.playerMon.level = 50; b.playerMon.atk = 400;
+      b.playerMon.maxHp = 600; b.playerMon.hp = 600;
+      const team = b.enemyTeam.length;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 40000 && b.scene.isActive()) {
+        if (!b.busy) b.takeTurn({ kind: 'move', move: b.playerMon.moves[0] });
+        await new Promise(r => setTimeout(r, 110));
+      }
+      clearInterval(tapper);
+
+      // The world plays the champion's defeat line, then launches the ending.
+      const t1 = Date.now();
+      let ending = null;
+      while (Date.now() - t1 < 12000) {
+        w.input.emit('pointerdown');
+        const e = window.game.scene.getScene('EndingScene');
+        if (e && e.scene.isActive()) { ending = e; break; }
+        await new Promise(r => setTimeout(r, 150));
+      }
+      return { started: true, team, beaten: w.state.championBeaten, ending: !!ending };
+    });
+    check('champion battles once unlocked', fight.started, `team of ${fight.team}`);
+    check('champion recorded as beaten', fight.beaten);
+    check('Hall of Fame ending plays', fight.ending);
+
+    log('\n[18] SAVE v4');
+    await page.evaluate(() => {
+      const e = window.game.scene.getScene('EndingScene');
+      if (e && e.scene.isActive()) e.finish();
+    });
+    await page.waitForFunction(() => {
+      const w = window.game.scene.getScene('WorldScene');
+      return !w.scene.isPaused();
+    }, { timeout: 10000 });
+    await page.evaluate(() => window.game.scene.getScene('WorldScene').persist());
+    await page.reload({ waitUntil: 'load' });
+    await bootToWorld(page);
+    const v4 = await page.evaluate(() => {
+      const w = window.game.scene.getScene('WorldScene');
+      return {
+        version: JSON.parse(localStorage.getItem('maazgame.save.v1')).version,
+        name: w.state.playerName,
+        champion: w.state.championBeaten,
+        gifts: w.state.gifts.length,
+        held: Object.keys(w.state.heldStock || {}).length,
+        nicknamed: w.state.party.some(m => !!m.nickname),
+      };
+    });
+    check('save format is v4', v4.version === 4);
+    check('player name persisted', !!v4.name, v4.name);
+    check('champion flag persisted', v4.champion);
+    check('gifts and shop stock persisted', v4.gifts >= 1 && v4.held >= 1);
+    check('nicknames persisted', v4.nicknamed);
 
     await page.screenshot({ path: OUT + '/new_world.png' });
     await page.evaluate(() => window.game.scene.getScene('WorldScene').openMenu());

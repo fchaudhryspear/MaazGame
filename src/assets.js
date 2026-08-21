@@ -279,8 +279,9 @@ export function buildAlert(scene) {
 
 // A placeholder battle monster: a coloured blob with eyes and feet.
 // One texture per species colour, built lazily.
-export function buildMonster(scene, key, color) {
+export function buildMonster(scene, key, color, shape = 'blob') {
   if (scene.textures.exists(key)) return;
+  if (shape === 'sheep') return buildSheep(scene, key, color);
   const S = 48;
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
   g.fillStyle(color, 1);
@@ -298,6 +299,50 @@ export function buildMonster(scene, key, color) {
   g.fillStyle(0x1c1c1c, 1);
   g.fillRect(S / 2 - 11, S - 8, 7, 6);     // feet
   g.fillRect(S / 2 + 4, S - 8, 7, 6);
+  g.generateTexture(key, S, S);
+  g.destroy();
+}
+
+// A sheep: fluffy cloud-shaped fleece with a dark face, ears and hooves.
+// Drawn as overlapping circles so the wool reads as wool at 48px.
+function buildSheep(scene, key, color) {
+  const S = 48;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+
+  // Legs first, so the fleece overlaps them.
+  g.fillStyle(0x4a3b2a, 1);
+  g.fillRect(S / 2 - 12, S - 11, 5, 9);
+  g.fillRect(S / 2 + 7, S - 11, 5, 9);
+
+  // Fleece: a ring of puffs plus a solid core.
+  g.fillStyle(color, 1);
+  const puffs = [
+    [-13, 2, 8], [-8, -6, 8], [0, -9, 9], [8, -6, 8], [13, 2, 8],
+    [-9, 8, 8], [0, 10, 8], [9, 8, 8],
+  ];
+  for (const [dx, dy, r] of puffs) g.fillCircle(S / 2 + dx, S / 2 + dy, r);
+  g.fillCircle(S / 2, S / 2, 13);
+
+  // Soft shading under the fleece.
+  g.fillStyle(0x000000, 0.08);
+  g.fillCircle(S / 2, S / 2 + 7, 11);
+
+  // Face on the right, so the sheep reads as facing the player.
+  const fx = S / 2 + 12, fy = S / 2 + 1;
+  g.fillStyle(0x3a3028, 1);
+  g.fillCircle(fx - 5, fy - 8, 4);            // ear
+  g.fillCircle(fx + 4, fy - 7, 4);
+  g.fillStyle(0x54473a, 1);
+  g.fillEllipse(fx, fy, 17, 15);              // muzzle
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(fx - 3, fy - 2, 3);            // eyes
+  g.fillCircle(fx + 4, fy - 2, 3);
+  g.fillStyle(0x111111, 1);
+  g.fillCircle(fx - 3, fy - 1, 1.6);
+  g.fillCircle(fx + 4, fy - 1, 1.6);
+  g.fillStyle(0x2a221c, 1);
+  g.fillEllipse(fx + 1, fy + 5, 6, 3);        // nose
+
   g.generateTexture(key, S, S);
   g.destroy();
 }

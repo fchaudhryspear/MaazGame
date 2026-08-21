@@ -8,7 +8,7 @@
 //  the scene, so the camera, HUD and touch controls survive a transition.
 // =========================================================================
 import { CONFIG, VIEW_W, VIEW_H } from '../config.js';
-import { SPECIES, ITEMS } from '../data/monsters.js';
+import { SPECIES, ITEMS, HELD_ITEMS } from '../data/monsters.js';
 import { CollisionMatrix } from '../entities/collision.js';
 import { Player } from '../entities/player.js';
 import { Npc, buildTrainerTeam } from '../entities/npc.js';
@@ -16,11 +16,13 @@ import { DialogueBox } from '../ui/dialogue.js';
 import { buildAlert } from '../assets.js';
 import { TouchControls } from '../ui/touch.js';
 import { EncounterManager } from '../systems/encounters.js';
-import { makeMonster, isFainted, healMonster, xpToNext } from '../systems/monster.js';
+import { makeMonster, isFainted, healMonster, xpToNext, setNickname } from '../systems/monster.js';
 import { newGameState, loadGame, saveGame } from '../systems/save.js';
 import { preloadAllMaps, loadMap, getCachedMap } from '../systems/maploader.js';
 import { buildTiles, buildPlayerSheet } from '../assets.js';
-import { TRAINERS } from '../data/trainers.js';
+import { TRAINERS, CHAMPION_ID } from '../data/trainers.js';
+import { Shop } from '../ui/shop.js';
+import { NamePrompt } from '../ui/prompt.js';
 import { panel, label, button, UIGroup } from '../ui/widgets.js';
 import { SFX, unlock as unlockAudio, setMuted, isMuted } from '../systems/audio.js';
 
@@ -40,6 +42,8 @@ export class WorldScene extends Phaser.Scene {
   async create() {
     this.mapIndex = await preloadAllMaps();
 
+    // The title screen creates and saves the initial state, so a missing save
+    // here means the player somehow skipped it — fall back rather than crash.
     this.state = loadGame() || newGameState();
 
     this.tileLayer = this.add.group();
@@ -78,6 +82,8 @@ export class WorldScene extends Phaser.Scene {
     });
 
     this.dialogue = new DialogueBox(this);
+    this.shop = new Shop(this, this.state);
+    this.prompt = new NamePrompt(this);
     this._buildHud();
     this._buildToast();
     this._refreshHud();
@@ -256,6 +262,7 @@ export class WorldScene extends Phaser.Scene {
     this.hudName = label(this, 12, 10, '', { size: '10px', depth: 201 });
     this.hudHp = label(this, 12, 22, '', { size: '9px', depth: 201 });
     this.hudGroup.add(this.hudName, this.hudHp);
+    this.hudObjects = [...this.hudGroup.items];
   }
 
   _refreshHud() {
@@ -274,6 +281,12 @@ export class WorldScene extends Phaser.Scene {
       size: '12px', wrapWidth: VIEW_W - 44, lineSpacing: 3, depth: 221,
     }).setVisible(false);
     this.toastTimer = null;
+  }
+
+  // Full-screen overlays (menu, shop, prompts) sit inside the panel, but the
+  // HUD is anchored top-left and pokes out past its edge — hide it with them.
+  setHudVisible(visible) {
+    for (const o of this.hudObjects || []) o.setVisible(visible);
   }
 
   hideToast() {
@@ -315,10 +328,24 @@ export class WorldScene extends Phaser.Scene {
   async talkTo(npc) {
     this.busy = true;
     this.touch.setVisible(false);
+    this.setHudVisible(false);
     this.hideToast();
     this.pressedDir = null;
     npc.faceTowards(this.player.col, this.player.row);
     SFX.select();
+
+    // The champion is locked until every road trainer has been beaten.
+    if (npc.kind === 'trainer' && npc.def.requires
+        && !this.isTrainerDefeated(this.map.name, npc.name)) {
+      const missing = npc.def.requires.filter((k) => !this.state.defeatedTrainers.includes(k));
+      if (missing.length) {
+        await this.dialogue.show(
+          [...npc.def.lockedLine, `You still need ${missing.length} more win(s).`],
+          npc.displayName);
+        this._endConversation();
+        return;
+      }
+    }
 
     if (npc.kind === 'trainer' && !this.isTrainerDefeated(this.map.name, npc.name)) {
       await this.dialogue.show(npc.def.intro, npc.displayName);
@@ -326,13 +353,50 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
+    // Shopkeeper: talk, then open the shop.
+    if (npc.def.shop) {
+      await this.dialogue.show(npc.def.lines, npc.displayName);
+      await this.shop.open();
+      this.persist();
+      this._refreshHud();
+      this._endConversation();
+      return;
+    }
+
+    // One-off gift (the ranch hand's sheep).
+    if (npc.def.gift && !this.state.gifts.includes(npc.id)) {
+      await this.dialogue.show(npc.def.lines, npc.displayName);
+      if (this.state.party.length >= CONFIG.PARTY_MAX) {
+        await this.dialogue.show(['...but your party is full!'], npc.displayName);
+        this._endConversation();
+        return;
+      }
+      const mon = makeMonster(npc.def.gift.species, npc.def.gift.level);
+      this.state.gifts.push(npc.id);
+      this.state.party.push(mon);
+      SFX.caught();
+      await this.dialogue.show([`You received a ${mon.name}!`], npc.displayName);
+
+      const nick = await this.prompt.ask(`Nickname for your ${mon.name}?`, '', 10);
+      if (nick) setNickname(mon, nick);
+      this._refreshHud();
+      this.persist();
+      this._endConversation();
+      return;
+    }
+
     const lines = npc.kind === 'trainer'
       ? [npc.def.afterLine]
-      : npc.def.lines;
+      : (npc.def.gift ? npc.def.afterGift : npc.def.lines);
     await this.dialogue.show(lines, npc.displayName);
+    this._endConversation();
+  }
 
+  // Hand control back after any conversation, shop visit or prompt.
+  _endConversation() {
     this.busy = false;
     this.touch.setVisible(true);
+    this.setHudVisible(true);
   }
 
   // Any undefeated trainer watching the tile the player just stepped onto
@@ -345,7 +409,6 @@ export class WorldScene extends Phaser.Scene {
       if (this.isTrainerDefeated(this.map.name, npc.name)) continue;
       if (!npc.sees(this.player.col, this.player.row, this.matrix)) continue;
 
-      this.challengedBy = npc;
       this._playAlert(npc);
       return true;
     }
@@ -356,6 +419,7 @@ export class WorldScene extends Phaser.Scene {
   async _playAlert(npc) {
     this.busy = true;
     this.touch.setVisible(false);
+    this.setHudVisible(false);
     this.pressedDir = null;
     npc.faceTowards(this.player.col, this.player.row);
     SFX.encounter();
@@ -386,6 +450,7 @@ export class WorldScene extends Phaser.Scene {
     // The D-Pad lives at a higher depth than the menu, so hide it outright
     // instead of letting it draw over the panel.
     this.touch.setVisible(false);
+    this.setHudVisible(false);
     this.hideToast();
     this.pressedDir = null;
     SFX.select();
@@ -393,30 +458,39 @@ export class WorldScene extends Phaser.Scene {
     const g = this.menuGroup;
     g.destroy();
     g.add(panel(this, 60, 24, VIEW_W - 120, VIEW_H - 60, 300));
-    g.add(label(this, VIEW_W / 2, 34, 'MENU', { size: '13px', originX: 0.5, depth: 301 }));
+    g.add(label(this, VIEW_W / 2, 34,
+      this.state.championBeaten ? 'MENU  ★ CHAMPION' : 'MENU', {
+        size: '13px', originX: 0.5, depth: 301,
+      }));
+    // Money has somewhere to go now, so it belongs on screen.
+    g.add(label(this, VIEW_W / 2, 50,
+      `${this.state.playerName || 'TRAINER'}   ${this.state.money} coins`, {
+        size: '10px', originX: 0.5, color: '#f5d76e', depth: 301,
+      }));
 
     const mk = (y, text, cb) => {
       const b = button(this, VIEW_W / 2, y, 260, 26, text, cb, { size: '11px', depth: 302 });
       g.add(b.rect, b.txt);
     };
 
-    mk(70, 'PARTY', () => this.showParty());
-    mk(104, 'BAG', () => this.showBag());
-    mk(138, 'POKéDEX', () => this.showDex());
-    mk(172, 'SAVE', () => {
+    mk(80, 'PARTY', () => this.showParty());
+    mk(112, 'BAG', () => this.showBag());
+    mk(144, 'POKéDEX', () => this.showDex());
+    mk(176, 'SAVE', () => {
       const ok = this.persist();
       if (ok) SFX.save();
       this.closeMenu();
       this.toast(ok ? 'Game saved.' : 'Could not save (storage blocked).');
     });
-    mk(206, isMuted() ? 'SOUND: OFF' : 'SOUND: ON', () => { this.toggleMute(); this.openMenu(); });
-    mk(250, 'CLOSE', () => { SFX.cancel(); this.closeMenu(); });
+    mk(208, isMuted() ? 'SOUND: OFF' : 'SOUND: ON', () => { this.toggleMute(); this.openMenu(); });
+    mk(252, 'CLOSE', () => { SFX.cancel(); this.closeMenu(); });
   }
 
   closeMenu() {
     this.menuOpen = false;
     this.menuGroup.destroy();
     this.touch.setVisible(true);
+    this.setHudVisible(true);
     this._refreshHud();
   }
 
@@ -445,9 +519,11 @@ export class WorldScene extends Phaser.Scene {
 
   showParty() {
     const lines = this.state.party.map((m, i) => {
-      const tag = isFainted(m) ? ' FAINTED' : '';
-      const xpPct = Math.floor((m.xp / xpToNext(m.level)) * 100);
-      return `${i + 1}. ${m.name} Lv${m.level}  ${m.hp}/${m.maxHp}  XP ${xpPct}%${tag}`;
+      const tag = isFainted(m) ? ' FAINTED' : (m.status ? ` ${m.status.toUpperCase().slice(0,3)}` : '');
+      const held = m.held && HELD_ITEMS[m.held] ? ` ◆${HELD_ITEMS[m.held].name}` : '';
+      // Show the species too when a nickname hides it.
+      const species = m.nickname ? ` (${SPECIES[m.speciesKey].name})` : '';
+      return `${i + 1}. ${m.name}${species} Lv${m.level} ${m.hp}/${m.maxHp}${tag}${held}`;
     });
     this._listScreen('PARTY', lines, 'No monsters.');
   }
@@ -456,6 +532,10 @@ export class WorldScene extends Phaser.Scene {
     const lines = Object.entries(this.state.bag)
       .filter(([, n]) => n > 0)
       .map(([k, n]) => `${ITEMS[k].name}  x${n}`);
+    // Held items bought at the shop live in their own stock.
+    for (const [k, n] of Object.entries(this.state.heldStock || {})) {
+      if (n > 0 && HELD_ITEMS[k]) lines.push(`◆ ${HELD_ITEMS[k].name}  x${n}`);
+    }
     this._listScreen('BAG', lines, 'Your bag is empty.');
   }
 
@@ -510,6 +590,10 @@ export class WorldScene extends Phaser.Scene {
 
   // Launch a trainer battle: a full team, no catching and no running.
   startTrainerBattle(npc) {
+    // Set here rather than only on sight: a trainer can also be challenged by
+    // walking up and talking, and that path must still get the defeat line
+    // (and, for the champion, the ending).
+    this.challengedBy = npc;
     this.encounterActive = true;
     this.busy = false;          // the battle scene owns input from here
     this.touch.setVisible(false);
@@ -543,6 +627,7 @@ export class WorldScene extends Phaser.Scene {
     this.pressedDir = null;
     this.input.enabled = true;
     if (this.touch) this.touch.setVisible(true);
+    this.setHudVisible(true);
 
     if (result === 'lose') {
       // Blackout: heal up and return to the start of the world.
@@ -557,6 +642,22 @@ export class WorldScene extends Phaser.Scene {
     this.persist();   // autosave after every battle
 
     // A beaten trainer has a parting line; losing to one just returns you home.
+    if (result === 'trainerWin' && this.challengedBy
+        && this.challengedBy.id === CHAMPION_ID) {
+      const npc = this.challengedBy;
+      this.challengedBy = null;
+      this.state.championBeaten = true;
+      this.persist();
+      this.time.delayedCall(400, async () => {
+        this.busy = true;
+        this.touch.setVisible(false);
+        await this.dialogue.show([npc.def.defeatLine], npc.displayName);
+        this.scene.launch('EndingScene', { state: this.state });
+        this.scene.pause();
+      });
+      return;
+    }
+
     if (result === 'trainerWin' && this.challengedBy) {
       const npc = this.challengedBy;
       this.challengedBy = null;

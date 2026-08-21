@@ -2,8 +2,10 @@
 //  BOOT — Phaser config tuned for crisp pixel art on iPad Safari.
 // =========================================================================
 import { VIEW_W, VIEW_H } from './config.js';
+import { TitleScene } from './scenes/TitleScene.js';
 import { WorldScene } from './scenes/WorldScene.js';
 import { BattleScene } from './scenes/BattleScene.js';
+import { EndingScene } from './scenes/EndingScene.js';
 
 const gameConfig = {
   type: Phaser.AUTO,
@@ -18,7 +20,8 @@ const gameConfig = {
     height: VIEW_H,
   },
   render: { antialias: false, pixelArt: true },
-  scene: [WorldScene, BattleScene],   // WorldScene starts first
+  // TitleScene starts first, then hands off to the world.
+  scene: [TitleScene, WorldScene, BattleScene, EndingScene],
 };
 
 if (typeof Phaser === 'undefined') {

@@ -280,6 +280,57 @@
               "value": "left"
             }
           ]
+        },
+        {
+          "id": 4,
+          "name": "to_hall",
+          "type": "warp",
+          "x": 416,
+          "y": 320,
+          "width": 32,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "toMap",
+              "type": "string",
+              "value": "hall"
+            },
+            {
+              "name": "toCol",
+              "type": "int",
+              "value": 6
+            },
+            {
+              "name": "toRow",
+              "type": "int",
+              "value": 10
+            },
+            {
+              "name": "facing",
+              "type": "string",
+              "value": "up"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "name": "hall_sign",
+          "type": "sign",
+          "x": 416,
+          "y": 288,
+          "width": 32,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "text",
+              "type": "string",
+              "value": "CHAMPION’S HALL\nOnly for trainers who have beaten\neveryone on the road."
+            }
+          ]
         }
       ],
       "opacity": 1,
@@ -289,7 +340,7 @@
     }
   ],
   "nextlayerid": 3,
-  "nextobjectid": 4,
+  "nextobjectid": 6,
   "orientation": "orthogonal",
   "properties": [
     {

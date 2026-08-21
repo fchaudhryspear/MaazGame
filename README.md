@@ -27,18 +27,28 @@ and the service worker are both blocked on the `file:` protocol.
 | Esc, or the **☰** button | Pause menu (party, bag, pokédex, save, sound) |
 | M | Mute / unmute |
 
-Walk into the tall grass to trigger a wild battle. Weaken a monster before
-throwing a ball to improve your odds. Standing on the cabin floor in town
-fully heals your party, and the game autosaves after every battle.
+On first run you name your trainer and nickname your starter, then you're in
+MAAZ TOWN. Walk into tall grass to trigger a wild battle; weaken a monster
+before throwing a ball to improve your odds, and you can nickname whatever you
+catch. Standing on the cabin floor in town fully heals your party, and the game
+autosaves after every battle.
 
-The world has three connected areas — **MAAZ TOWN** (safe), **ROUTE 1**, and
-**MAAZ CAVE** — each with its own wild monsters. Step onto a road at the edge
-of an area to travel between them.
+**The goal:** beat the three road trainers, then the CHAMPION at the end of
+MAAZ CAVE. Winning rolls a Hall of Fame — after that the save continues, so
+there's still a pokédex to finish and monsters to raise.
 
-Talk to the townsfolk for hints. **Trainers watch the tile ahead of them** and
-challenge you on sight, so walking into a line of sight starts a battle you
-cannot flee — beat them once and they stay beaten. Watch out for burn, poison
-and paralysis, and check what your monster is holding.
+The world has four connected areas — **MAAZ TOWN** (safe), **ROUTE 1**, **MAAZ
+CAVE**, and the **CHAMPION'S HALL** deep inside it — each with its own wild
+monsters. Step onto a road at the edge of an area to travel between them.
+
+Talk to the townsfolk for hints — the **ranch hand gives you a LAMBLET**, a
+sheep that grows into WOOLIE and then RAMBOLT. The **shopkeeper** sells potions,
+balls and held items for the prize money trainers pay out.
+
+**Trainers watch the tile ahead of them** and challenge you on sight, so walking
+into a line of sight starts a battle you cannot flee — beat them once and they
+stay beaten. Watch out for burn, poison and paralysis, and check what your
+monster is holding.
 
 On iPad Safari: open the URL, then **Share → Add to Home Screen** to install.
 Launch once online to prime the offline cache. To reach it from an iPad on the
@@ -70,7 +80,16 @@ deploy to GitHub Pages (see below).
   runs low, a Quick Claw that jumps the turn order, and a status guard.
 - **NPCs and trainers** — paged dialogue boxes, and trainers who watch a line
   of tiles, pop a "!", battle you with a full team, and pay out on defeat.
-- **Progression** — XP, level-ups with stat growth and learnsets (4-move cap).
+- **Progression** — XP, level-ups with stat growth and learnsets (4-move cap),
+  and **evolution**: five lines evolve at set levels, with an animation and
+  recomputed stats. Nicknames survive evolving.
+- **A goal and an ending** — a CHAMPION locked behind the three road trainers,
+  a Hall of Fame roll for the party, and free play afterwards.
+- **Shop and money** — trainers pay prize money; the town shop turns it into
+  potions, balls and held items.
+- **Title screen and naming** — new game or continue, name your trainer and
+  nickname every monster you catch, via an in-canvas keyboard (a DOM input
+  fights the Scale Manager on iPad).
 - **Catching & party** — throw balls to capture wild monsters, carry up to six,
   switch mid-battle, and heal with items from the bag.
 - **Persistence** — localStorage save/load with autosave, plus a mini pokédex
@@ -95,8 +114,8 @@ tools/build-maps.mjs      Compiles + validates ASCII into maps/*.json
 src/entities/             Collision matrix, grid-locked player, NPCs
 play.sh                   One-command local server
 src/systems/              Battle maths, encounters, save/load, audio, maps
-src/ui/                   Shared widgets, touch controls
-src/scenes/               WorldScene (overworld), BattleScene
+src/ui/                   Widgets, touch controls, dialogue, shop, name prompt
+src/scenes/               Title, World (overworld), Battle, Ending
 tests/smoke.cjs           End-to-end headless browser test
 vendor/phaser.min.js      Vendored Phaser 3.80.1 (offline-safe)
 manifest.webmanifest      PWA metadata
@@ -138,12 +157,13 @@ npm install playwright
 node tests/smoke.cjs
 ```
 
-Boots the real game in headless Chromium and runs 58 checks: movement and
+Boots the real game in headless Chromium and runs the full suite: movement and
 collision, warps and multi-area travel, type effectiveness, a full battle with
 XP and level-ups, catching, party switching, items, NPC dialogue, trainer line
 of sight and team battles, status conditions, held items, the pause menu,
-save/load across a page reload, blackout, heal tiles and signs. Set `CHROMIUM`
-to point at an existing browser binary.
+save/load across a page reload, blackout, heal tiles and signs, plus the title
+screen and naming, the sheep gift, the shop, evolution, the champion gate and
+the ending. Set `CHROMIUM` to point at an existing browser binary.
 
 ## Deploying
 
@@ -156,6 +176,9 @@ so generated files can't go stale.
 
 ## Roadmap
 
-- More areas, and decor layers on the existing ones.
-- A shop to spend prize money, and more held items.
+- Type-effectiveness hints in the move menu, so matchups are learnable without
+  prior Pokémon knowledge.
+- More areas and species; decor layers on the existing maps.
+- Equipping held items from the bag (they can currently be bought and are shown,
+  but are assigned in data).
 - Sleep/freeze conditions and multi-turn moves.
