@@ -8,11 +8,12 @@
 //    pick an action -> resolve both sides in order -> check faints -> repeat.
 // =========================================================================
 import { VIEW_W, VIEW_H, UI } from '../config.js';
-import { MOVES, ITEMS, TYPE_COLORS } from '../data/monsters.js';
+import { MOVES, ITEMS, SPECIES, TYPE_COLORS } from '../data/monsters.js';
 import {
   computeDamage, effectivenessText, orderActions, isFainted,
   gainXp, xpFromDefeat, xpToNext, rollCatch,
   tryPinchHeal, heldBlocksStatus, heldItem, rollQuickClaw,
+  pendingEvolution, evolveMonster, setNickname,
 } from '../systems/monster.js';
 import {
   inflictStatus, statusTick, rollStatusSkip, cureStatus,
@@ -21,6 +22,7 @@ import {
 import { typeMultiplier } from '../data/monsters.js';
 import { buildMonster, buildBall } from '../assets.js';
 import { panel, label, button, typeBadge, UIGroup } from '../ui/widgets.js';
+import { NamePrompt } from '../ui/prompt.js';
 import { SFX } from '../systems/audio.js';
 
 export class BattleScene extends Phaser.Scene {
@@ -61,6 +63,7 @@ export class BattleScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.fadeIn(200, 0, 0, 0);
+    this.prompt = new NamePrompt(this);
     buildBall(this);
     this._buildScene();
 
@@ -72,6 +75,14 @@ export class BattleScene extends Phaser.Scene {
     this.start();
   }
 
+  // Build (once) and return the texture key for a monster, passing the
+  // species shape so sheep are drawn as sheep rather than generic blobs.
+  _monTexture(mon) {
+    const key = 'mon_' + mon.speciesKey;
+    buildMonster(this, key, mon.color, SPECIES[mon.speciesKey].shape || 'blob');
+    return key;
+  }
+
   // ---- layout ----------------------------------------------------------
   _buildScene() {
     const W = VIEW_W, H = VIEW_H;
@@ -80,8 +91,8 @@ export class BattleScene extends Phaser.Scene {
     this.add.rectangle(0, 0, W, H, 0x9bd7e6).setOrigin(0).setDepth(0);
     this.add.rectangle(0, H * 0.58, W, H * 0.42, 0x6bbf59).setOrigin(0).setDepth(0);
 
-    buildMonster(this, 'mon_' + this.enemyMon.speciesKey, this.enemyMon.color);
-    buildMonster(this, 'mon_' + this.playerMon.speciesKey, this.playerMon.color);
+    this._monTexture(this.enemyMon);
+    this._monTexture(this.playerMon);
 
     // Enemy: upper-right on a platform.
     this.add.ellipse(360, 120, 96, 26, 0x4f9d43).setDepth(1);
@@ -661,6 +672,13 @@ export class BattleScene extends Phaser.Scene {
     if (this.state.party.length < 6) {
       this.state.party.push(this.enemyMon);
       await this.message(`${this.enemyMon.name} joined your party!`);
+      // Offer a nickname — kids name everything, and it makes the catch stick.
+      const nick = await this.prompt.ask(
+        `Nickname for your ${this.enemyMon.name}?`, '', 10);
+      if (nick) {
+        setNickname(this.enemyMon, nick);
+        await this.message(`${this.enemyMon.name} it is!`);
+      }
     } else {
       await this.message('Your party is full, so it was released.');
     }
@@ -678,7 +696,7 @@ export class BattleScene extends Phaser.Scene {
     // Stat stages belong to the monster that earned them.
     this.stages.player = { atk: 0, def: 0, spd: 0 };
 
-    buildMonster(this, 'mon_' + incoming.speciesKey, incoming.color);
+    this._monTexture(incoming);
     this.playerSprite.setTexture('mon_' + incoming.speciesKey);
     this.playerSprite.setAlpha(1).setScale(1.9);
     this.playerSprite.y = 198;
@@ -744,6 +762,9 @@ export class BattleScene extends Phaser.Scene {
       if (lv.learned) await this.message(`${mon.name} learned ${MOVES[lv.learned].name}!`);
     }
 
+    // Levelling can trigger an evolution — the big moment of the game.
+    await this.tryEvolve(mon);
+
     // Trainer with monsters left: send out the next one and continue.
     const next = this.enemyTeam.findIndex((m, i) => i > this.enemyIndex && !isFainted(m));
     if (this.isTrainerBattle && next !== -1) {
@@ -751,7 +772,7 @@ export class BattleScene extends Phaser.Scene {
       this.enemyMon = this.enemyTeam[next];
       this.stages.enemy = { atk: 0, def: 0, spd: 0 };
 
-      buildMonster(this, 'mon_' + this.enemyMon.speciesKey, this.enemyMon.color);
+      this._monTexture(this.enemyMon);
       this.enemySprite.setTexture('mon_' + this.enemyMon.speciesKey);
       this.enemySprite.setAlpha(1).setScale(1.5);
       this.enemySprite.y = 96;
@@ -763,6 +784,41 @@ export class BattleScene extends Phaser.Scene {
     }
 
     await this.win();
+  }
+
+  // Play the evolution sequence: the sprite flashes white, swells, and
+  // returns as the new species.
+  async tryEvolve(mon) {
+    while (pendingEvolution(mon)) {
+      await this.message(`What? ${mon.name} is evolving!`);
+
+      const spr = this.playerSprite;
+      const baseScale = spr.scaleX;
+      SFX.levelUp();
+
+      await new Promise((res) => {
+        this.tweens.add({
+          targets: spr,
+          scaleX: baseScale * 1.35, scaleY: baseScale * 1.35,
+          alpha: 0.25,
+          duration: 260, yoyo: true, repeat: 2,
+          onComplete: res,
+        });
+      });
+
+      const result = evolveMonster(mon);
+      if (!result) break;
+
+      // Swap in the new species art mid-flash.
+      this.cameras.main.flash(320, 255, 255, 255);
+      spr.setTexture(this._monTexture(mon));
+      spr.setAlpha(1).setScale(baseScale);
+      this._drawPlayerPanel();
+      this._refreshPlayerHud();
+
+      SFX.caught();
+      await this.message(`${result.fromName} evolved into ${result.toName}!`);
+    }
   }
 
   async win() {

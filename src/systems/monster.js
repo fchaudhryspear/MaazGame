@@ -39,7 +39,8 @@ export function makeMonster(speciesKey, level) {
   const st = statsFor(speciesKey, level);
   return {
     speciesKey,
-    name: s.name,
+    name: s.name,        // display name — a nickname replaces this
+    nickname: null,
     type: s.type,
     color: s.color,
     level,
@@ -133,6 +134,49 @@ export function computeDamage(attacker, defender, move, atkStages, defStages) {
     damage: Math.max(1, Math.floor(base * multiplier * stab * held * roll)),
     multiplier,
   };
+}
+
+// --- nicknames and evolution --------------------------------------------
+
+export function setNickname(mon, nickname) {
+  const clean = (nickname || '').trim().slice(0, 10);
+  mon.nickname = clean || null;
+  mon.name = clean || SPECIES[mon.speciesKey].name;
+  return mon;
+}
+
+// The species this monster would become at its current level, or null.
+export function pendingEvolution(mon) {
+  const s = SPECIES[mon.speciesKey];
+  if (!s.evolvesTo || !SPECIES[s.evolvesTo]) return null;
+  if (mon.level < s.evolvesAt) return null;
+  return s.evolvesTo;
+}
+
+// Evolve in place: stats recompute from the new species, HP keeps the gain,
+// and a nickname is kept (only an un-nicknamed monster takes the new name).
+export function evolveMonster(mon) {
+  const toKey = pendingEvolution(mon);
+  if (!toKey) return null;
+
+  const fromName = mon.name;
+  const before = statsFor(mon.speciesKey, mon.level);
+  const after = statsFor(toKey, mon.level);
+  const next = SPECIES[toKey];
+
+  mon.speciesKey = toKey;
+  mon.type = next.type;
+  mon.color = next.color;
+  if (!mon.nickname) mon.name = next.name;
+
+  const hpGain = after.maxHp - before.maxHp;
+  mon.maxHp = after.maxHp;
+  mon.hp = Math.min(mon.maxHp, mon.hp + Math.max(0, hpGain));
+  mon.atk = after.atk;
+  mon.def = after.def;
+  mon.spd = after.spd;
+
+  return { fromName, toName: next.name, speciesKey: toKey };
 }
 
 // --- held items ----------------------------------------------------------
