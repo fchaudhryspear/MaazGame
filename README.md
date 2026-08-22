@@ -50,10 +50,11 @@ into a line of sight starts a battle you cannot flee — beat them once and they
 stay beaten. Watch out for burn, poison and paralysis, and check what your
 monster is holding.
 
-On iPad Safari: open the URL, then **Share → Add to Home Screen** to install.
-Launch once online to prime the offline cache. To reach it from an iPad on the
-same network, serve with `./play.sh` and visit `http://<your-mac-ip>:8000`, or
-deploy to GitHub Pages (see below).
+To play on an iPad on the same network, serve with `./play.sh` and visit
+`http://<your-mac-ip>:8000` in Safari. **Share → Add to Home Screen** makes an
+icon for it. Note that the offline cache needs a secure context, so over a plain
+`http://` LAN address the service worker won't register — the Mac has to be
+serving. Installing it as a genuinely offline PWA needs an `https://` URL.
 
 ## Systems
 
@@ -164,15 +165,6 @@ of sight and team battles, status conditions, held items, the pause menu,
 save/load across a page reload, blackout, heal tiles and signs, plus the title
 screen and naming, the sheep gift, the shop, evolution, the champion gate and
 the ending. Set `CHROMIUM` to point at an existing browser binary.
-
-## Deploying
-
-`.github/workflows/pages.yml` publishes the game to GitHub Pages on every push
-to `main`, so it can be played from a URL (and installed on an iPad from there).
-Enable it once under **Settings → Pages → Source: GitHub Actions**.
-
-The workflow also fails the build if `maps/` has drifted from its ASCII source,
-so generated files can't go stale.
 
 ## Roadmap
 
