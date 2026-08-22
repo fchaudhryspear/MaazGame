@@ -95,6 +95,13 @@ serving. Installing it as a genuinely offline PWA needs an `https://` URL.
   switch mid-battle, and heal with items from the bag.
 - **Persistence** — localStorage save/load with autosave, plus a mini pokédex
   tracking what you've seen and caught.
+- **Runtime pixel art** — no image files anywhere. Terrain is generated as
+  several variants per surface and scattered by tile position, so a field of
+  grass never repeats into graph paper; paths and ponds fringe into the grass
+  they touch, water animates, and every species has its own silhouette
+  (four-legged, finned, winged, faceted, fleeced) rather than a recoloured
+  blob. Battles are fought against a painted backdrop of sky, hills and
+  treeline.
 - **Audio** — every sound effect is synthesised at runtime with WebAudio
   (no audio files), unlocked on first gesture as iOS requires.
 - **PWA** — manifest + service worker precache the whole app shell, including

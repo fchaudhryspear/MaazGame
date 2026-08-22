@@ -86,6 +86,7 @@ export const MOVES = Object.freeze({
 // `catchRate` is 0..1 (higher = easier). `xpYield` scales battle rewards.
 export const SPECIES = Object.freeze({
   maaz: {
+    shape: 'beast',
     name: 'MAAZ', type: 'fire', color: 0xd23b3b,
     base: { hp: 26, atk: 12, def: 10, spd: 12 },
     moves: ['scratch', 'ember'],
@@ -94,6 +95,7 @@ export const SPECIES = Object.freeze({
     evolvesTo: 'maazflare', evolvesAt: 16,
   },
   maazflare: {
+    shape: 'beast', stage: 2,
     name: 'MAAZFLARE', type: 'fire', color: 0xff6b35,
     base: { hp: 40, atk: 20, def: 16, spd: 19 },
     moves: ['flamebite', 'quickatk'],
@@ -101,6 +103,7 @@ export const SPECIES = Object.freeze({
     catchRate: 0.2, xpYield: 158,
   },
   aqua: {
+    shape: 'aqua',
     name: 'AQUABIT', type: 'water', color: 0x3d7bd6,
     base: { hp: 28, atk: 10, def: 12, spd: 10 },
     moves: ['tackle', 'watergun'],
@@ -109,6 +112,7 @@ export const SPECIES = Object.freeze({
     evolvesTo: 'aquadon', evolvesAt: 18,
   },
   aquadon: {
+    shape: 'aqua', stage: 2,
     name: 'AQUADON', type: 'water', color: 0x2a5fb0,
     base: { hp: 44, atk: 17, def: 20, spd: 15 },
     moves: ['surge', 'aquajet'],
@@ -116,6 +120,7 @@ export const SPECIES = Object.freeze({
     catchRate: 0.2, xpYield: 155,
   },
   leaflet: {
+    shape: 'leaf',
     name: 'LEAFLET', type: 'grass', color: 0x3fa34d,
     base: { hp: 30, atk: 10, def: 11, spd: 9 },
     moves: ['scratch', 'vinewhip'],
@@ -124,6 +129,7 @@ export const SPECIES = Object.freeze({
     evolvesTo: 'leafgore', evolvesAt: 18,
   },
   leafgore: {
+    shape: 'leaf', stage: 2,
     name: 'LEAFGORE', type: 'grass', color: 0x1f7a35,
     base: { hp: 46, atk: 17, def: 19, spd: 13 },
     moves: ['leafblade', 'toxicspore'],
@@ -131,6 +137,7 @@ export const SPECIES = Object.freeze({
     catchRate: 0.2, xpYield: 155,
   },
   zapmo: {
+    shape: 'spark',
     name: 'ZAPMO', type: 'electric', color: 0xe6c62e,
     base: { hp: 22, atk: 11, def: 9, spd: 15 },
     moves: ['tackle', 'spark'],
@@ -138,6 +145,7 @@ export const SPECIES = Object.freeze({
     catchRate: 0.45, xpYield: 60,
   },
   birbo: {
+    shape: 'bird',
     name: 'BIRBO', type: 'flying', color: 0x9b6bd0,
     base: { hp: 24, atk: 11, def: 9, spd: 14 },
     moves: ['tackle', 'gust'],
@@ -145,6 +153,7 @@ export const SPECIES = Object.freeze({
     catchRate: 0.5, xpYield: 56,
   },
   emberling: {
+    shape: 'beast',
     name: 'EMBERLING', type: 'fire', color: 0xf0803c,
     base: { hp: 25, atk: 13, def: 9, spd: 11 },
     moves: ['scratch', 'ember'],
@@ -161,7 +170,7 @@ export const SPECIES = Object.freeze({
     evolvesTo: 'woolie', evolvesAt: 12,
   },
   woolie: {
-    shape: 'sheep',
+    shape: 'sheep', stage: 2,
     name: 'WOOLIE', type: 'normal', color: 0xe8dcc0,
     base: { hp: 38, atk: 13, def: 16, spd: 10 },
     moves: ['tackle', 'bodyslam'],
@@ -170,7 +179,7 @@ export const SPECIES = Object.freeze({
     evolvesTo: 'rambolt', evolvesAt: 24,
   },
   rambolt: {
-    shape: 'sheep',
+    shape: 'sheep', stage: 3,
     name: 'RAMBOLT', type: 'electric', color: 0xf5d76e,
     base: { hp: 46, atk: 18, def: 19, spd: 14 },
     moves: ['bodyslam', 'thunderjolt'],
@@ -179,6 +188,7 @@ export const SPECIES = Object.freeze({
   },
 
   pebbo: {
+    shape: 'rock',
     name: 'PEBBO', type: 'normal', color: 0x9a8f7a,
     base: { hp: 34, atk: 11, def: 15, spd: 6 },
     moves: ['tackle', 'harden'],

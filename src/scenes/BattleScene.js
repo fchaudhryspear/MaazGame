@@ -20,7 +20,7 @@ import {
   statusName, statusColor,
 } from '../systems/status.js';
 import { typeMultiplier } from '../data/monsters.js';
-import { buildMonster, buildBall } from '../assets.js';
+import { buildMonster, buildBall, buildBattleBackdrop, buildPlatform } from '../assets.js';
 import { panel, label, button, typeBadge, UIGroup } from '../ui/widgets.js';
 import { NamePrompt } from '../ui/prompt.js';
 import { SFX } from '../systems/audio.js';
@@ -79,7 +79,8 @@ export class BattleScene extends Phaser.Scene {
   // species shape so sheep are drawn as sheep rather than generic blobs.
   _monTexture(mon) {
     const key = 'mon_' + mon.speciesKey;
-    buildMonster(this, key, mon.color, SPECIES[mon.speciesKey].shape || 'blob');
+    const spec = SPECIES[mon.speciesKey];
+    buildMonster(this, key, mon.color, spec.shape || 'blob', spec.stage || 1);
     return key;
   }
 
@@ -87,21 +88,24 @@ export class BattleScene extends Phaser.Scene {
   _buildScene() {
     const W = VIEW_W, H = VIEW_H;
 
-    // Opaque background so the paused world can't show through.
-    this.add.rectangle(0, 0, W, H, 0x9bd7e6).setOrigin(0).setDepth(0);
-    this.add.rectangle(0, H * 0.58, W, H * 0.42, 0x6bbf59).setOrigin(0).setDepth(0);
+    // Painted backdrop — sky, hills, treeline and turf — so the arena reads
+    // as a place rather than two coloured bands. Opaque, so the paused world
+    // can't show through.
+    buildBattleBackdrop(this, W, H);
+    buildPlatform(this);
+    this.add.image(0, 0, 'battle_bg').setOrigin(0).setDepth(0);
 
     this._monTexture(this.enemyMon);
     this._monTexture(this.playerMon);
 
-    // Enemy: upper-right on a platform.
-    this.add.ellipse(360, 120, 96, 26, 0x4f9d43).setDepth(1);
+    // Enemy: upper-right, further away, so its platform is smaller.
+    this.add.image(360, 122, 'platform').setDepth(1).setScale(0.82);
     this.enemySprite = this.add
       .image(360, 96, 'mon_' + this.enemyMon.speciesKey)
       .setDepth(2).setScale(1.5);
 
     // Player's monster: lower-left, larger (nearer the camera).
-    this.add.ellipse(116, 226, 110, 28, 0x4f9d43).setDepth(1);
+    this.add.image(116, 228, 'platform').setDepth(1).setScale(1.05);
     this.playerSprite = this.add
       .image(116, 198, 'mon_' + this.playerMon.speciesKey)
       .setDepth(2).setScale(1.9);

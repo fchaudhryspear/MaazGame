@@ -62,7 +62,8 @@ export class EndingScene extends Phaser.Scene {
     for (let i = 0; i < party.length; i++) {
       const mon = party[i];
       const key = 'mon_' + mon.speciesKey;
-      buildMonster(this, key, mon.color, SPECIES[mon.speciesKey].shape || 'blob');
+      const spec = SPECIES[mon.speciesKey];
+      buildMonster(this, key, mon.color, spec.shape || 'blob', spec.stage || 1);
 
       const col = i % 3;
       const row = Math.floor(i / 3);
