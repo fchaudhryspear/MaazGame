@@ -4,12 +4,20 @@
  *  - Precache the whole (self-contained) app shell on install: index.html,
  *    the vendored Phaser build, the manifest, and the icons. Everything the
  *    game needs is same-origin, so no cross-origin/opaque handling is needed.
- *  - Runtime: cache-first for GETs, falling back to network and caching new
- *    same-origin responses. Navigations fall back to the cached shell offline.
+ *  - Runtime: NETWORK-FIRST for same-origin GETs, falling back to the cache
+ *    when the network fails. Every successful response refreshes the cache,
+ *    so the game still starts and runs with no network at all.
  *
- * Bump CACHE_VERSION whenever the shell changes to retire old caches.
+ * Why network-first: this was cache-first, which meant a `git pull` changed
+ * the files on disk and the browser never asked for them — the game kept
+ * running last week's code until the cache version happened to be bumped.
+ * Silently serving stale code is a worse failure than a few milliseconds of
+ * revalidation on a local server, and offline still works because every
+ * fetch falls back to the cache.
+ *
+ * Bump CACHE_VERSION whenever the shell changes, to retire old caches.
  */
-const CACHE_VERSION = 'maazgame-v6';
+const CACHE_VERSION = 'maazgame-v7';
 
 // Relative paths so the PWA works under a subpath (e.g. GitHub Pages
 // project sites like user.github.io/MaazGame/).
@@ -85,20 +93,23 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
-  // Cache-first: serve from cache, otherwise fetch and cache same-origin GETs.
+  // Network-first with a cache fallback: fresh code when there is a network,
+  // the last known-good copy when there isn't.
   event.respondWith(
     (async () => {
-      const cached = await caches.match(request);
-      if (cached) return cached;
+      const url = new URL(request.url);
+      const sameOrigin = url.origin === self.location.origin;
+
       try {
         const res = await fetch(request);
-        const url = new URL(request.url);
-        if (res && res.status === 200 && url.origin === self.location.origin) {
+        if (res && res.status === 200 && sameOrigin) {
           const cache = await caches.open(CACHE_VERSION);
           cache.put(request, res.clone());
         }
         return res;
       } catch (e) {
+        const cached = await caches.match(request);
+        if (cached) return cached;
         // Offline navigation fallback -> app shell.
         if (request.mode === 'navigate') {
           const shell = await caches.match('./index.html');

@@ -19,6 +19,13 @@ Pass a port if 8000 is taken (`./play.sh 9000`), or use `npm start`.
 It has to be served over `http://` rather than opened as a file — ES modules
 and the service worker are both blocked on the `file:` protocol.
 
+**After a `git pull`, reload the page once and the update is live.** The
+service worker keeps a copy of the game so it runs offline, but it asks the
+network first, so new code is picked up as soon as it exists. (If you are
+coming from a build older than this note, reload twice: the first reload is
+what replaces the old worker.) `node tests/serviceworker.cjs` checks all of
+this — that updates arrive, and that the game still boots with no network.
+
 | Input | Action |
 | --- | --- |
 | Arrow keys / WASD, or the on-screen D-Pad | Walk (tile by tile) |
@@ -135,6 +142,7 @@ src/systems/              Battle maths, encounters, save/load, audio, maps
 src/ui/                   Widgets, touch controls, dialogue, shop, name prompt
 src/scenes/               Title, World (overworld), Battle, Ending
 tests/smoke.cjs           End-to-end headless browser test
+tests/serviceworker.cjs   Checks updates reach the browser, offline still works
 vendor/phaser.min.js      Vendored Phaser 3.80.1 (offline-safe)
 manifest.webmanifest      PWA metadata
 sw.js                     Service worker (app-shell precache, cache-first)

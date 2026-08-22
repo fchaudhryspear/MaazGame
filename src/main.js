@@ -40,6 +40,22 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('sw.js')
+      .then((reg) => reg.update())     // check for a new worker every boot
       .catch((err) => console.warn('Service worker registration failed:', err));
+  });
+
+  // When a new worker takes over, the page in front of you is still running
+  // the old code it was served. Reload once, so pulling an update and
+  // reopening the game is all it takes to actually see the update.
+  //
+  // Guarded on there having been a controller already: the very first
+  // registration also fires controllerchange (via clients.claim), and
+  // reloading a first-time visitor for no reason would be its own bug.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    window.location.reload();
   });
 }
