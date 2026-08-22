@@ -8,7 +8,7 @@
 //  the scene, so the camera, HUD and touch controls survive a transition.
 // =========================================================================
 import { CONFIG, VIEW_W, VIEW_H } from '../config.js';
-import { SPECIES, ITEMS, HELD_ITEMS } from '../data/monsters.js';
+import { SPECIES, ITEMS, HELD_ITEMS, MOVES } from '../data/monsters.js';
 import { CollisionMatrix } from '../entities/collision.js';
 import { Player } from '../entities/player.js';
 import { Npc, buildTrainerTeam } from '../entities/npc.js';
@@ -16,13 +16,16 @@ import { DialogueBox } from '../ui/dialogue.js';
 import { buildAlert } from '../assets.js';
 import { TouchControls } from '../ui/touch.js';
 import { EncounterManager } from '../systems/encounters.js';
-import { makeMonster, isFainted, healMonster, xpToNext, setNickname } from '../systems/monster.js';
+import {
+  makeMonster, isFainted, healMonster, xpToNext, setNickname,
+  levelUpOnce, pendingEvolution, evolveMonster,
+} from '../systems/monster.js';
 import { newGameState, loadGame, saveGame } from '../systems/save.js';
 import { preloadAllMaps, loadMap, getCachedMap } from '../systems/maploader.js';
 import {
   buildTiles, buildPlayerSheet, TILE_VARIANTS, ANIMATED_TILES, DECOR_VARIANTS,
 } from '../assets.js';
-import { TRAINERS, CHAMPION_ID } from '../data/trainers.js';
+import { TRAINERS, CHAMPION_ID, candyLevelCap } from '../data/trainers.js';
 import { Shop } from '../ui/shop.js';
 import { NamePrompt } from '../ui/prompt.js';
 import { panel, label, button, UIGroup } from '../ui/widgets.js';
@@ -563,7 +566,7 @@ export class WorldScene extends Phaser.Scene {
     this._refreshHud();
   }
 
-  _listScreen(title, lines, emptyText) {
+  _listScreen(title, lines, emptyText, opts = {}) {
     const g = this.menuGroup;
     g.destroy();
     g.add(panel(this, 40, 24, VIEW_W - 80, VIEW_H - 60, 300));
@@ -577,6 +580,17 @@ export class WorldScene extends Phaser.Scene {
       lines.slice(0, 7).forEach((line, i) => {
         g.add(label(this, 60, 62 + i * 24, line, { size: '11px', depth: 301 }));
       });
+    }
+
+    if (opts.footer) {
+      g.add(label(this, VIEW_W / 2, VIEW_H - 108, opts.footer, {
+        size: '9px', originX: 0.5, color: '#9fd0ff', depth: 301,
+      }));
+    }
+    if (opts.action) {
+      const a = button(this, VIEW_W / 2, VIEW_H - 78, 260, 24, opts.action.text,
+        opts.action.cb, { size: '10px', depth: 302 });
+      g.add(a.rect, a.txt);
     }
 
     const b = button(this, VIEW_W / 2, VIEW_H - 50, 260, 26, 'BACK', () => {
@@ -605,7 +619,72 @@ export class WorldScene extends Phaser.Scene {
     for (const [k, n] of Object.entries(this.state.heldStock || {})) {
       if (n > 0 && HELD_ITEMS[k]) lines.push(`◆ ${HELD_ITEMS[k].name}  x${n}`);
     }
-    this._listScreen('BAG', lines, 'Your bag is empty.');
+    lines.push(`${ITEMS.rarecandy.name}  x∞`);
+    this._listScreen('BAG', lines, '', {
+      action: { text: 'USE RARE CANDY', cb: () => this.showCandyTargets() },
+      footer: `Rare Candy raises one level, up to Lv${candyLevelCap()}.`,
+    });
+  }
+
+  // Pick who eats the candy. Party members already at the cap are listed but
+  // disabled, so it is obvious the ceiling exists rather than a tap silently
+  // doing nothing.
+  showCandyTargets() {
+    SFX.select();
+    const g = this.menuGroup;
+    g.destroy();
+    const cap = candyLevelCap();
+
+    g.add(panel(this, 40, 24, VIEW_W - 80, VIEW_H - 60, 300));
+    g.add(label(this, VIEW_W / 2, 34, 'RARE CANDY', {
+      size: '13px', originX: 0.5, depth: 301,
+    }));
+    g.add(label(this, VIEW_W / 2, 52, `Raises one level. Cap is Lv${cap}.`, {
+      size: '9px', originX: 0.5, color: '#9fd0ff', depth: 301,
+    }));
+
+    this.state.party.slice(0, 6).forEach((mon, i) => {
+      const atCap = mon.level >= cap;
+      const b = button(this, VIEW_W / 2, 76 + i * 28, 300, 24,
+        `${mon.name}  Lv${mon.level}${atCap ? '  (MAX)' : ''}`,
+        () => this._useCandy(mon),
+        { size: '10px', depth: 302, enabled: !atCap });
+      g.add(b.rect, b.txt);
+    });
+
+    const back = button(this, VIEW_W / 2, VIEW_H - 50, 260, 26, 'BACK', () => {
+      SFX.cancel();
+      this.showBag();
+    }, { size: '11px', depth: 302 });
+    g.add(back.rect, back.txt);
+  }
+
+  // Feed the candy: one level, then evolve if that level was the trigger.
+  _useCandy(mon) {
+    const cap = candyLevelCap();
+    if (mon.level >= cap) {
+      this.closeMenu();
+      this.toast(`${mon.name} is already at the Lv${cap} candy cap.`);
+      return;
+    }
+
+    const before = mon.name;
+    const report = levelUpOnce(mon);
+    SFX.levelUp();
+
+    let msg = `${before} grew to Lv${report.level}!`;
+    if (report.learned) msg += `\nIt learned ${MOVES[report.learned].name}!`;
+
+    const evo = pendingEvolution(mon);
+    if (evo) {
+      evolveMonster(mon);
+      msg += `\n${before} evolved into ${SPECIES[evo].name}!`;
+    }
+
+    this.persist();
+    this._refreshHud();
+    this.closeMenu();
+    this.toast(msg);
   }
 
   showDex() {

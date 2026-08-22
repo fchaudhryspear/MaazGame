@@ -223,6 +223,9 @@ export const ITEMS = Object.freeze({
   antidote:    { name: 'Antidote',    kind: 'cure' },
   ball:        { name: 'Maaz Ball',   kind: 'ball',  bonus: 1.0 },
   greatball:   { name: 'Great Ball',  kind: 'ball',  bonus: 1.5 },
+  // Never runs out and never appears in the shop: it is simply always in the
+  // bag. Out of battle only, like the real thing.
+  rarecandy:   { name: 'Rare Candy',  kind: 'levelup', infinite: true },
 });
 
 // Shop stock. Held items are sold too, so prize money has somewhere to go.
@@ -240,7 +243,7 @@ export const SHOP_STOCK = Object.freeze([
 
 // What the player starts a fresh game with.
 export const STARTING_BAG = Object.freeze({
-  potion: 3, superpotion: 1, antidote: 2, ball: 5, greatball: 1,
+  potion: 5, superpotion: 1, antidote: 2, ball: 5, greatball: 1,
 });
 
 // What the starter is holding on a fresh game.

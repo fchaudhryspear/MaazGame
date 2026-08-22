@@ -481,7 +481,7 @@
     {
       "name": "encounterMax",
       "type": "int",
-      "value": 6
+      "value": 4
     },
     {
       "name": "spawnCol",

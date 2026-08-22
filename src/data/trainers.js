@@ -13,6 +13,8 @@ export const NPCS = Object.freeze({
       'Hi! Are you a monster trainer?',
       'The tall grass on ROUTE 1 is full of\nwild monsters.',
       "Don't go in without a healthy party!",
+      'Stuck on a battle? Your BAG has a RARE\nCANDY that never runs out.',
+      'One candy is one level — but it stops\nfive levels above the CHAMPION.',
     ],
   },
   nurse: {
@@ -71,8 +73,8 @@ export const TRAINERS = Object.freeze({
     afterLine: 'Wild monsters get tougher further east.',
     reward: 120,
     team: [
-      { species: 'birbo', level: 5 },
-      { species: 'aqua', level: 6 },
+      { species: 'birbo', level: 4 },
+      { species: 'aqua', level: 5 },
     ],
   },
   camper_rae: {
@@ -127,3 +129,19 @@ export const TRAINERS = Object.freeze({
     ],
   },
 });
+
+// The strongest monster the CHAMPION fields — their "ace". Derived rather
+// than written down twice, so retuning the champion's team moves the level
+// cap with it.
+export function championAceLevel() {
+  return Math.max(...TRAINERS[CHAMPION_ID].team.map((m) => m.level));
+}
+
+// How far the Rare Candy will take a monster. Five levels past the ace is
+// enough to walk through the story without turning the champion into a
+// formality, and it is a hard ceiling: the candy simply stops working.
+export const CANDY_LEVELS_OVER_ACE = 5;
+
+export function candyLevelCap() {
+  return championAceLevel() + CANDY_LEVELS_OVER_ACE;
+}

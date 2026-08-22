@@ -37,6 +37,12 @@ autosaves after every battle.
 MAAZ CAVE. Winning rolls a Hall of Fame — after that the save continues, so
 there's still a pokédex to finish and monsters to raise.
 
+**If a battle is too hard,** open the menu → BAG → USE RARE CANDY. It raises
+one monster one level, it is never used up, and it works out of battle only
+(as in the games it borrows from). It stops five levels above the CHAMPION's
+strongest monster, so it can carry you through the story without deleting the
+ending: grinding is optional, winning still isn't automatic.
+
 The world has four connected areas — **MAAZ TOWN** (safe), **ROUTE 1**, **MAAZ
 CAVE**, and the **CHAMPION'S HALL** deep inside it — each with its own wild
 monsters. Step onto a road at the edge of an area to travel between them.
@@ -81,6 +87,10 @@ serving. Installing it as a genuinely offline PWA needs an `https://` URL.
   runs low, a Quick Claw that jumps the turn order, and a status guard.
 - **NPCs and trainers** — paged dialogue boxes, and trainers who watch a line
   of tiles, pop a "!", battle you with a full team, and pay out on defeat.
+- **An infinite Rare Candy** — one level per tap, never consumed, hard-capped
+  five levels above the champion's ace (derived from their team, so retuning
+  the champion moves the cap with it). Levels gained this way are ordinary
+  levels: stats grow, moves are learned, and monsters still evolve.
 - **Progression** — XP, level-ups with stat growth and learnsets (4-move cap),
   and **evolution**: five lines evolve at set levels, with an animation and
   recomputed stats. Nicknames survive evolving.

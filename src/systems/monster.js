@@ -72,27 +72,42 @@ export function gainXp(mon, amount) {
   mon.xp += amount;
   while (mon.xp >= xpToNext(mon.level)) {
     mon.xp -= xpToNext(mon.level);
-    mon.level++;
-
-    // Keep the HP the monster had, then extend it by the new max.
-    const before = statsFor(mon.speciesKey, mon.level - 1);
-    const after = statsFor(mon.speciesKey, mon.level);
-    const hpGain = after.maxHp - before.maxHp;
-    mon.maxHp = after.maxHp;
-    mon.hp = Math.min(mon.maxHp, mon.hp + hpGain);
-    mon.atk = after.atk;
-    mon.def = after.def;
-    mon.spd = after.spd;
-
-    // A move learned exactly at this level, if any.
-    const learnAt = SPECIES[mon.speciesKey].learnset || {};
-    const learned = learnAt[mon.level];
-    if (learned && !mon.moves.includes(learned)) {
-      mon.moves.push(learned);
-      if (mon.moves.length > 4) mon.moves.shift(); // forget the oldest
-    }
-    report.levels.push({ level: mon.level, learned: learned || null });
+    report.levels.push(applyLevelUp(mon));
   }
+  return report;
+}
+
+// Raise a monster one level and recompute everything that depends on it.
+// Shared by XP gain and by the Rare Candy, so a level is a level however it
+// was earned. Returns { level, learned }.
+function applyLevelUp(mon) {
+  mon.level++;
+
+  // Keep the HP the monster had, then extend it by the new max.
+  const before = statsFor(mon.speciesKey, mon.level - 1);
+  const after = statsFor(mon.speciesKey, mon.level);
+  const hpGain = after.maxHp - before.maxHp;
+  mon.maxHp = after.maxHp;
+  mon.hp = Math.min(mon.maxHp, mon.hp + hpGain);
+  mon.atk = after.atk;
+  mon.def = after.def;
+  mon.spd = after.spd;
+
+  // A move learned exactly at this level, if any.
+  const learnAt = SPECIES[mon.speciesKey].learnset || {};
+  const learned = learnAt[mon.level];
+  if (learned && !mon.moves.includes(learned)) {
+    mon.moves.push(learned);
+    if (mon.moves.length > 4) mon.moves.shift(); // forget the oldest
+  }
+  return { level: mon.level, learned: learned || null };
+}
+
+// One level, no XP required — what the Rare Candy does. Progress toward the
+// next level resets, exactly as if the level had just been reached.
+export function levelUpOnce(mon) {
+  const report = applyLevelUp(mon);
+  mon.xp = 0;
   return report;
 }
 
