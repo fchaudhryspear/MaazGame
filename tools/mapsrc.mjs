@@ -77,7 +77,7 @@ export const MAPS = {
 
   route1: {
     displayName: 'ROUTE 1',
-    encounters: { pool: ['aqua', 'leaflet', 'birbo', 'emberling'], min: 2, max: 6 },
+    encounters: { pool: ['aqua', 'leaflet', 'birbo', 'emberling'], min: 2, max: 4 },
     ground: [
       'TTTTTTTTTTTTTTTTTTTT',
       'T,,,,,,,,,,,,,,,,,,T',

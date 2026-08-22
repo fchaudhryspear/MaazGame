@@ -25,16 +25,22 @@ export class TitleScene extends Phaser.Scene {
     this.prompt = new NamePrompt(this);
 
     // Grass backdrop, so the title looks like the world it opens into.
-    this.add.rectangle(0, 0, VIEW_W, VIEW_H, 0x54b35a).setOrigin(0).setDepth(0);
+    this.add.rectangle(0, 0, VIEW_W, VIEW_H, 0x57a44b).setOrigin(0).setDepth(0);
     for (let x = 0; x < VIEW_W; x += 32) {
       for (let y = 0; y < VIEW_H; y += 32) {
-        this.add.image(x + 16, y + 16, 'tile_grass').setDepth(0).setAlpha(0.5);
+        const col = x / 32, row = y / 32;
+        this.add.image(x + 16, y + 16, 'tile_grass', (col * 3 + row * 7) % 4).setDepth(0);
+        // Same sparse scatter as the overworld, so the title screen is made
+        // of the world rather than a flat green sheet.
+        if ((col * 5 + row * 11) % 9 === 0) {
+          this.add.image(x + 16, y + 16, 'decor_grass', (col + row) % 4).setDepth(0);
+        }
       }
     }
 
     // A sheep and the starter flank the title.
     buildMonster(this, 'title_sheep', SPECIES.lamblet.color, 'sheep');
-    buildMonster(this, 'title_starter', SPECIES.maaz.color, 'blob');
+    buildMonster(this, 'title_starter', SPECIES.maaz.color, SPECIES.maaz.shape, 1);
     const sheep = this.add.image(96, 150, 'title_sheep').setDepth(2).setScale(1.6);
     const starter = this.add.image(VIEW_W - 96, 150, 'title_starter').setDepth(2).setScale(1.6);
     // Gentle bob, so the screen isn't static.

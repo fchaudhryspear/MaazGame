@@ -43,10 +43,11 @@ export const ANIMS = Object.freeze({
 
 // Shared UI palette so panels/menus look consistent across scenes.
 export const UI = Object.freeze({
-  panelFill: 0x10131a,
-  panelAlpha: 0.94,
-  panelStroke: 0xffffff,
-  btnFill: 0x1b2a3a,
-  btnFillActive: 0x2f4a63,
+  panelFill: 0x141a28,
+  panelHi: 0x2b3a56,
+  panelAlpha: 0.95,
+  panelStroke: 0xe8eef7,
+  btnFill: 0x23344c,
+  btnFillActive: 0x36547a,
   font: 'monospace',
 });

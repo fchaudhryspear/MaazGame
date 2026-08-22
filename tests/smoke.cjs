@@ -77,7 +77,7 @@ async function bootToWorld(page) {
     check('world + party ready', boot.party === 1 && boot.lead === 'MAAZ', `${boot.lead} Lv${boot.lvl}`);
     check('collision matrix built', boot.rows === 15 && boot.cols === 20, `${boot.cols}x${boot.rows}`);
     check('spawn walkable', !boot.spawnBlocked);
-    check('starting bag', boot.bag.ball === 5 && boot.bag.potion === 3, JSON.stringify(boot.bag));
+    check('starting bag', boot.bag.ball === 5 && boot.bag.potion === 5, JSON.stringify(boot.bag));
     check('starting money', boot.money === 500, String(boot.money));
 
     log('\n[2] MOVEMENT + COLLISION');
@@ -694,7 +694,51 @@ async function bootToWorld(page) {
     check('champion recorded as beaten', fight.beaten);
     check('Hall of Fame ending plays', fight.ending);
 
-    log('\n[18] SAVE v4');
+    log('\n[18] RARE CANDY');
+    const candy = await page.evaluate(async () => {
+      const w = window.game.scene.getScene('WorldScene');
+      const { candyLevelCap, championAceLevel } = await import('./src/data/trainers.js');
+      const cap = candyLevelCap();
+      w.busy = false;
+      w.menuOpen = false;
+
+      // A fresh low-level sheep to feed, so the check is independent of
+      // whatever the party has been through earlier in the suite.
+      const { makeMonster } = await import('./src/systems/monster.js');
+      const lamb = makeMonster('lamblet', 5);
+      w.state.party.push(lamb);
+      const startLevel = lamb.level;
+
+      w._useCandy(lamb);
+      const afterOne = lamb.level;
+      const hpGrew = lamb.maxHp > 30 + startLevel * 3 - 1;
+
+      // Feed it up to the cap; it must evolve on the way and then stop.
+      let guard = 0;
+      while (lamb.level < cap && guard++ < 60) w._useCandy(lamb);
+      const atCap = lamb.level;
+      const speciesAtCap = lamb.speciesKey;
+
+      w._useCandy(lamb);                       // one past the ceiling
+      const afterCap = lamb.level;
+
+      // The bag never runs out — the candy isn't stored there at all.
+      const inBagState = Object.keys(w.state.bag).includes('rarecandy');
+      return { cap, ace: championAceLevel(), startLevel, afterOne, hpGrew,
+               atCap, afterCap, speciesAtCap, inBagState };
+    });
+    check('candy cap is five over the champion ace',
+      candy.cap === candy.ace + 5, `ace Lv${candy.ace}, cap Lv${candy.cap}`);
+    check('one candy is one level', candy.afterOne === candy.startLevel + 1,
+      `Lv${candy.startLevel} -> Lv${candy.afterOne}`);
+    check('stats grow with the level', candy.hpGrew);
+    check('candy evolves at the right level', candy.speciesAtCap === 'rambolt',
+      candy.speciesAtCap);
+    check('candy stops at the cap', candy.atCap === candy.cap && candy.afterCap === candy.cap,
+      `stuck at Lv${candy.afterCap}`);
+    check('candy is never consumed', candy.inBagState === false);
+
+    log('\n[19] SAVE v4');
     await page.evaluate(() => {
       const e = window.game.scene.getScene('EndingScene');
       if (e && e.scene.isActive()) e.finish();

@@ -6,13 +6,20 @@
 import { UI } from '../config.js';
 import { SFX } from '../systems/audio.js';
 
+// A framed panel: drop shadow, rounded body, bright inner rule. Returns a
+// Graphics rather than a Rectangle — same setVisible/setDepth/destroy surface,
+// but it can carry rounded corners and layered edges, which is most of what
+// separates "programmer rectangle" from "game UI".
 export function panel(scene, x, y, w, h, depth = 100) {
-  return scene.add
-    .rectangle(x, y, w, h, UI.panelFill, UI.panelAlpha)
-    .setOrigin(0)
-    .setStrokeStyle(2, UI.panelStroke, 0.6)
-    .setScrollFactor(0)
-    .setDepth(depth);
+  const g = scene.add.graphics({ x, y }).setScrollFactor(0).setDepth(depth);
+  const r = 6;
+
+  g.fillStyle(0x000000, 0.35).fillRoundedRect(3, 4, w, h, r);      // shadow
+  g.fillStyle(UI.panelFill, UI.panelAlpha).fillRoundedRect(0, 0, w, h, r);
+  g.fillStyle(UI.panelHi, 0.5).fillRoundedRect(2, 2, w - 4, 10, { tl: r - 2, tr: r - 2, bl: 0, br: 0 });
+  g.lineStyle(2, UI.panelStroke, 0.75).strokeRoundedRect(1, 1, w - 2, h - 2, r);
+  g.lineStyle(1, 0x000000, 0.45).strokeRoundedRect(3, 3, w - 6, h - 6, r - 2);
+  return g;
 }
 
 export function label(scene, x, y, text, opts = {}) {
@@ -35,12 +42,23 @@ export function label(scene, x, y, text, opts = {}) {
 export function button(scene, x, y, w, h, text, onClick, opts = {}) {
   const enabled = opts.enabled !== false;
   const depth = opts.depth ?? 120;
+  const r = 5;
 
-  const rect = scene.add
-    .rectangle(x, y, w, h, enabled ? UI.btnFill : 0x2a2a2a, 1)
-    .setStrokeStyle(2, UI.panelStroke, enabled ? 0.85 : 0.3)
-    .setScrollFactor(0)
-    .setDepth(depth);
+  // The visible body is a Graphics so it can be rounded and layered; a
+  // transparent rectangle on top of it takes the input, which keeps hit
+  // testing exactly as simple as it was.
+  const g = scene.add.graphics({ x: x - w / 2, y: y - h / 2 })
+    .setScrollFactor(0).setDepth(depth);
+
+  const paint = (fill) => {
+    g.clear();
+    g.fillStyle(0x000000, 0.3).fillRoundedRect(2, 3, w, h, r);
+    g.fillStyle(enabled ? fill : 0x262a33, 1).fillRoundedRect(0, 0, w, h, r);
+    g.fillStyle(0xffffff, enabled ? 0.13 : 0.05)
+      .fillRoundedRect(2, 2, w - 4, Math.max(3, h / 2 - 3), { tl: r - 1, tr: r - 1, bl: 0, br: 0 });
+    g.lineStyle(2, UI.panelStroke, enabled ? 0.85 : 0.25).strokeRoundedRect(1, 1, w - 2, h - 2, r);
+  };
+  paint(UI.btnFill);
 
   const txt = scene.add
     .text(x, y, text, {
@@ -53,11 +71,14 @@ export function button(scene, x, y, w, h, text, onClick, opts = {}) {
     .setScrollFactor(0)
     .setDepth(depth + 1);
 
+  const hit = scene.add.rectangle(x, y, w, h, 0x000000, 0)
+    .setScrollFactor(0).setDepth(depth + 2);
+
   if (enabled) {
-    rect.setInteractive({ useHandCursor: true });
-    rect.on('pointerover', () => rect.setFillStyle(UI.btnFillActive, 1));
-    rect.on('pointerout', () => rect.setFillStyle(UI.btnFill, 1));
-    rect.on('pointerdown', (pointer, lx, ly, event) => {
+    hit.setInteractive({ useHandCursor: true });
+    hit.on('pointerover', () => paint(UI.btnFillActive));
+    hit.on('pointerout', () => paint(UI.btnFill));
+    hit.on('pointerdown', (pointer, lx, ly, event) => {
       // Keep the tap from also reaching the scene-wide "advance message"
       // handler, which would otherwise skip the next line instantly.
       if (event && event.stopPropagation) event.stopPropagation();
@@ -66,7 +87,11 @@ export function button(scene, x, y, w, h, text, onClick, opts = {}) {
     });
   }
 
-  return { rect, txt, destroy: () => { rect.destroy(); txt.destroy(); } };
+  return {
+    rect: g,
+    txt,
+    destroy: () => { g.destroy(); txt.destroy(); hit.destroy(); },
+  };
 }
 
 // A small coloured type badge, e.g. FIRE / WATER.

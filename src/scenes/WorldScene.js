@@ -8,7 +8,7 @@
 //  the scene, so the camera, HUD and touch controls survive a transition.
 // =========================================================================
 import { CONFIG, VIEW_W, VIEW_H } from '../config.js';
-import { SPECIES, ITEMS, HELD_ITEMS } from '../data/monsters.js';
+import { SPECIES, ITEMS, HELD_ITEMS, MOVES } from '../data/monsters.js';
 import { CollisionMatrix } from '../entities/collision.js';
 import { Player } from '../entities/player.js';
 import { Npc, buildTrainerTeam } from '../entities/npc.js';
@@ -16,11 +16,16 @@ import { DialogueBox } from '../ui/dialogue.js';
 import { buildAlert } from '../assets.js';
 import { TouchControls } from '../ui/touch.js';
 import { EncounterManager } from '../systems/encounters.js';
-import { makeMonster, isFainted, healMonster, xpToNext, setNickname } from '../systems/monster.js';
+import {
+  makeMonster, isFainted, healMonster, xpToNext, setNickname,
+  levelUpOnce, pendingEvolution, evolveMonster,
+} from '../systems/monster.js';
 import { newGameState, loadGame, saveGame } from '../systems/save.js';
 import { preloadAllMaps, loadMap, getCachedMap } from '../systems/maploader.js';
-import { buildTiles, buildPlayerSheet } from '../assets.js';
-import { TRAINERS, CHAMPION_ID } from '../data/trainers.js';
+import {
+  buildTiles, buildPlayerSheet, TILE_VARIANTS, ANIMATED_TILES, DECOR_VARIANTS,
+} from '../assets.js';
+import { TRAINERS, CHAMPION_ID, candyLevelCap } from '../data/trainers.js';
 import { Shop } from '../ui/shop.js';
 import { NamePrompt } from '../ui/prompt.js';
 import { panel, label, button, UIGroup } from '../ui/widgets.js';
@@ -35,6 +40,7 @@ export class WorldScene extends Phaser.Scene {
     // All art is procedurally generated — nothing to load from disk.
     buildTiles(this);
     buildPlayerSheet(this);
+    this._registerTileAnims();
   }
 
   // Async because maps are real files. Phaser does not await create(), so
@@ -159,20 +165,86 @@ export class WorldScene extends Phaser.Scene {
       for (let c = 0; c < map.cols; c++) {
         const gId = map.ground[r][c];
         if (gId >= 0 && map.tiles[gId]) {
-          const img = this.add
-            .image(c * t + t / 2, r * t + t / 2, map.tiles[gId].key)
-            .setDepth(0);
-          this.tileLayer.add(img);
+          const key = map.tiles[gId].key;
+          this.tileLayer.add(this._placeTile(key, c, r, t, 0));
+          // Where a path or the water meets grass, fringe that tile on the
+          // shared side, so the two surfaces interlock instead of butting
+          // into a ruled edge. Grass overhanging water reads as a bank.
+          if (key === 'tile_path' || key === 'tile_water') {
+            const sides = [[0, -1, 0], [1, 0, 1], [0, 1, 2], [-1, 0, 3]];
+            for (const [dc, dr, frame] of sides) {
+              if (this._groundKey(map, c + dc, r + dr) !== 'tile_grass') continue;
+              this.tileLayer.add(
+                this.add.image(c * t + t / 2, r * t + t / 2, 'edge_grass', frame)
+                  .setDepth(0.4)
+              );
+            }
+          }
+          // Roughly one grass tile in eight gets a flower, stone or clover.
+          // Sparse on purpose: any denser and the eye picks out the pattern.
+          if (key === 'tile_grass') {
+            const h = this._tileHash(c + 977, r + 311);
+            if (h % 100 < 13) {
+              this.tileLayer.add(
+                this.add.image(c * t + t / 2, r * t + t / 2, 'decor_grass',
+                  (h >>> 8) % DECOR_VARIANTS).setDepth(0.5)
+              );
+            }
+          }
         }
         const dId = map.decor ? map.decor[r][c] : -1;
         if (dId >= 0 && map.tiles[dId]) {
           // Decor sits above ground but below the player.
-          const img = this.add
-            .image(c * t + t / 2, r * t + t / 2, map.tiles[dId].key)
-            .setDepth(1);
-          this.tileLayer.add(img);
+          this.tileLayer.add(this._placeTile(map.tiles[dId].key, c, r, t, 1));
         }
       }
+    }
+  }
+
+  // Texture key of a ground tile, or null off the edge of the map.
+  _groundKey(map, col, row) {
+    if (row < 0 || row >= map.rows || col < 0 || col >= map.cols) return null;
+    const id = map.ground[row][col];
+    return id >= 0 && map.tiles[id] ? map.tiles[id].key : null;
+  }
+
+  // Ground textures are generated as several variants; which one a tile gets
+  // is hashed from its position, so a field of grass is varied but identical
+  // on every load. Water is the exception: its frames are an animation.
+  _placeTile(key, col, row, t, depth) {
+    const x = col * t + t / 2, y = row * t + t / 2;
+
+    if (ANIMATED_TILES[key]) {
+      const spr = this.add.sprite(x, y, key, 0).setDepth(depth);
+      // Stagger the start frame so the whole pond doesn't pulse in unison.
+      spr.play({ key: `anim_${key}`, startFrame: (col + row) % ANIMATED_TILES[key].frames });
+      return spr;
+    }
+
+    const variants = TILE_VARIANTS[key] || 1;
+    const frame = variants > 1 ? this._tileHash(col, row) % variants : 0;
+    return this.add.image(x, y, key, frame).setDepth(depth);
+  }
+
+  // Cheap spatial hash — stable per tile, and scattered enough that variants
+  // don't fall into visible diagonal stripes.
+  _tileHash(col, row) {
+    let h = (col * 73856093) ^ (row * 19349663);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return (h ^ (h >>> 16)) >>> 0;
+  }
+
+  // Register the looping animations for animated ground tiles.
+  _registerTileAnims() {
+    for (const [key, cfg] of Object.entries(ANIMATED_TILES)) {
+      const animKey = `anim_${key}`;
+      if (this.anims.exists(animKey)) continue;
+      this.anims.create({
+        key: animKey,
+        frames: Array.from({ length: cfg.frames }, (_, i) => ({ key, frame: i })),
+        frameRate: cfg.fps,
+        repeat: -1,
+      });
     }
   }
 
@@ -276,7 +348,7 @@ export class WorldScene extends Phaser.Scene {
   // Transient text for signs, healing and saving. It sits just under the HUD
   // rather than at the bottom, where it would collide with the D-Pad.
   _buildToast() {
-    this.toastPanel = panel(this, 8, 42, VIEW_W - 16, 70, 220).setVisible(false);
+    this.toastPanel = panel(this, 8, 42, VIEW_W - 16, 32, 220).setVisible(false);
     this.toastText = label(this, 20, 50, '', {
       size: '12px', wrapWidth: VIEW_W - 44, lineSpacing: 3, depth: 221,
     }).setVisible(false);
@@ -494,7 +566,7 @@ export class WorldScene extends Phaser.Scene {
     this._refreshHud();
   }
 
-  _listScreen(title, lines, emptyText) {
+  _listScreen(title, lines, emptyText, opts = {}) {
     const g = this.menuGroup;
     g.destroy();
     g.add(panel(this, 40, 24, VIEW_W - 80, VIEW_H - 60, 300));
@@ -508,6 +580,17 @@ export class WorldScene extends Phaser.Scene {
       lines.slice(0, 7).forEach((line, i) => {
         g.add(label(this, 60, 62 + i * 24, line, { size: '11px', depth: 301 }));
       });
+    }
+
+    if (opts.footer) {
+      g.add(label(this, VIEW_W / 2, VIEW_H - 108, opts.footer, {
+        size: '9px', originX: 0.5, color: '#9fd0ff', depth: 301,
+      }));
+    }
+    if (opts.action) {
+      const a = button(this, VIEW_W / 2, VIEW_H - 78, 260, 24, opts.action.text,
+        opts.action.cb, { size: '10px', depth: 302 });
+      g.add(a.rect, a.txt);
     }
 
     const b = button(this, VIEW_W / 2, VIEW_H - 50, 260, 26, 'BACK', () => {
@@ -536,7 +619,72 @@ export class WorldScene extends Phaser.Scene {
     for (const [k, n] of Object.entries(this.state.heldStock || {})) {
       if (n > 0 && HELD_ITEMS[k]) lines.push(`◆ ${HELD_ITEMS[k].name}  x${n}`);
     }
-    this._listScreen('BAG', lines, 'Your bag is empty.');
+    lines.push(`${ITEMS.rarecandy.name}  x∞`);
+    this._listScreen('BAG', lines, '', {
+      action: { text: 'USE RARE CANDY', cb: () => this.showCandyTargets() },
+      footer: `Rare Candy raises one level, up to Lv${candyLevelCap()}.`,
+    });
+  }
+
+  // Pick who eats the candy. Party members already at the cap are listed but
+  // disabled, so it is obvious the ceiling exists rather than a tap silently
+  // doing nothing.
+  showCandyTargets() {
+    SFX.select();
+    const g = this.menuGroup;
+    g.destroy();
+    const cap = candyLevelCap();
+
+    g.add(panel(this, 40, 24, VIEW_W - 80, VIEW_H - 60, 300));
+    g.add(label(this, VIEW_W / 2, 34, 'RARE CANDY', {
+      size: '13px', originX: 0.5, depth: 301,
+    }));
+    g.add(label(this, VIEW_W / 2, 52, `Raises one level. Cap is Lv${cap}.`, {
+      size: '9px', originX: 0.5, color: '#9fd0ff', depth: 301,
+    }));
+
+    this.state.party.slice(0, 6).forEach((mon, i) => {
+      const atCap = mon.level >= cap;
+      const b = button(this, VIEW_W / 2, 76 + i * 28, 300, 24,
+        `${mon.name}  Lv${mon.level}${atCap ? '  (MAX)' : ''}`,
+        () => this._useCandy(mon),
+        { size: '10px', depth: 302, enabled: !atCap });
+      g.add(b.rect, b.txt);
+    });
+
+    const back = button(this, VIEW_W / 2, VIEW_H - 50, 260, 26, 'BACK', () => {
+      SFX.cancel();
+      this.showBag();
+    }, { size: '11px', depth: 302 });
+    g.add(back.rect, back.txt);
+  }
+
+  // Feed the candy: one level, then evolve if that level was the trigger.
+  _useCandy(mon) {
+    const cap = candyLevelCap();
+    if (mon.level >= cap) {
+      this.closeMenu();
+      this.toast(`${mon.name} is already at the Lv${cap} candy cap.`);
+      return;
+    }
+
+    const before = mon.name;
+    const report = levelUpOnce(mon);
+    SFX.levelUp();
+
+    let msg = `${before} grew to Lv${report.level}!`;
+    if (report.learned) msg += `\nIt learned ${MOVES[report.learned].name}!`;
+
+    const evo = pendingEvolution(mon);
+    if (evo) {
+      evolveMonster(mon);
+      msg += `\n${before} evolved into ${SPECIES[evo].name}!`;
+    }
+
+    this.persist();
+    this._refreshHud();
+    this.closeMenu();
+    this.toast(msg);
   }
 
   showDex() {
