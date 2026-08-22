@@ -8,7 +8,8 @@
     "start": "./play.sh",
     "serve": "python3 -m http.server 8000",
     "maps": "node tools/build-maps.mjs",
-    "test": "node tests/smoke.cjs"
+    "test": "node tests/smoke.cjs",
+    "test:sw": "node tests/serviceworker.cjs"
   },
   "devDependencies": {
     "playwright": "^1.47.0"
